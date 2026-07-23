@@ -21,11 +21,11 @@ interface BookDao {
     suspend fun insertBook(book: BookEntity): Long
 
     @Update
-    suspend fun updateBook(book: BookEntity)
+    suspend fun updateBook(book: BookEntity): Unit
 
     @Delete
-    suspend fun  deleteBook(book: BookEntity)
+    suspend fun  deleteBook(book: BookEntity): Unit
 
     @Query("UPDATE books SET lastReadPage = :page, lastReadCfi = :cfi, progressPercentage = :progress, lastReadAt = :timestamp WHERE id = :bookId")
-    suspend fun updateReadingProgress(bookId: Long, page: Int, cfi:String?, progress: Float, timestamp: Long = System.currentTimeMillis())
+    suspend fun updateReadingProgress(bookId: Long, page: Int, cfi:String?, progress: Float, timestamp: Long = System.currentTimeMillis()): Unit
 }
