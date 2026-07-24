@@ -7,6 +7,7 @@ data class Book(
     val filePath: String,
     val coverPath: String? = null,
     val format: BookFormat,
+    val fileSize: Long = -1L,
     val totalPages: Int = 0,
     val lastReadPage: Int = 0,
     val lastReadCfi: String? = null,

@@ -21,6 +21,14 @@ class BookRepositoryImpl(
         return bookDao.getBooksById(id)?.toDomainModel()
     }
 
+    override suspend fun getBookByFilePath(filePath: String): Book? {
+        return bookDao.getBookByFilePath(filePath)?.toDomainModel()
+    }
+
+    override suspend fun getAllFilePaths(): List<String> {
+        return bookDao.getAllFilePaths()
+    }
+
     override suspend fun insertBook(book: Book): Long {
         return bookDao.insertBook(book.toEntity())
     }
@@ -31,6 +39,14 @@ class BookRepositoryImpl(
 
     override suspend fun deleteBook(book: Book) {
         bookDao.deleteBook(book.toEntity())
+    }
+
+    override suspend fun deleteBookByFilePath(filePath: String) {
+        bookDao.deleteBookByFilePath(filePath)
+    }
+
+    override suspend fun isFileSizeExists(fileSize: Long): Boolean {
+        return bookDao.countBooksByFileSize(fileSize) > 0
     }
 
     override suspend fun updateReadingProgress(

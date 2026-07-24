@@ -56,9 +56,22 @@ object FileUtil{
 //    Check the book format
     fun getBookFormat(fileName: String): BookFormat? {
         return when{
-            fileName.endsWith(".pdf", ignoreCase = true) -> BookFormat.PDF
             fileName.endsWith(".epub", ignoreCase = true) -> BookFormat.EPUB
             else -> null
         }
+    }
+
+    fun getFileSize(context: Context, uri: Uri): Long {
+        var size = -1L
+        if (uri.scheme == "content") {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val index = it.getColumnIndex(OpenableColumns.SIZE)
+                    if (index != -1) size = it.getLong(index)
+                }
+            }
+        }
+        return size
     }
 }

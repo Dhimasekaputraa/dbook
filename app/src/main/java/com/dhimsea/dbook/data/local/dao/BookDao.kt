@@ -17,6 +17,18 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id ")
     suspend fun getBooksById(id: Long): BookEntity?
 
+    @Query("SELECT * FROM books WHERE filePath = :filePath LIMIT 1")
+    suspend fun getBookByFilePath(filePath: String): BookEntity?
+
+    @Query("SELECT filePath from books")
+    suspend fun getAllFilePaths(): List<String>
+
+    @Query("DELETE FROM books WHERE filePath = :filePath")
+    suspend fun deleteBookByFilePath(filePath: String)
+
+    @Query("SELECT COUNT(*) FROM books WHERE fileSize = :fileSize AND fileSize != -1")
+    suspend fun countBooksByFileSize(fileSize: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBook(book: BookEntity): Long
 
