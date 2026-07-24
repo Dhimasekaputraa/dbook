@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.dhimsea.dbook.core.designsystem.DbookTheme
 import com.dhimsea.dbook.ui.library.LibraryScreen
 import com.dhimsea.dbook.ui.library.LibraryViewModel
@@ -22,19 +24,30 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val app = application as DbookApplication
-        val repository = app.bookRepository
 
         enableEdgeToEdge()
         setContent {
-            DbookTheme {
-                val libraryViewModel: LibraryViewModel = viewModel(
-                    factory = LibraryViewModelFactory(repository)
+            val libraryViewModel: LibraryViewModel = viewModel(
+                factory = LibraryViewModelFactory(
+                    bookRepository = app.bookRepository,
+                    scanRepository = app.scanDirectoryRepository,
+                    themeRepository = app.themeRepository,
+                    context = applicationContext
                 )
-                    LibraryScreen(viewModel = libraryViewModel)
-                }
+            )
+
+            val isDarkMode by libraryViewModel.isDarkMode.collectAsState()
+            val isDynamicColor by libraryViewModel.isDynamicColor.collectAsState()
+
+            DbookTheme(
+                darkTheme = isDarkMode,
+                dynamicColor = isDynamicColor
+            ) {
+                LibraryScreen(viewModel = libraryViewModel)
             }
         }
     }
+}
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {
