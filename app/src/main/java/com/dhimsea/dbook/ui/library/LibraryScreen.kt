@@ -10,8 +10,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Book as BookIcon
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
@@ -27,10 +27,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel) {
+fun LibraryScreen(viewModel: LibraryViewModel,
+                onBookClick: (Book) -> Unit) {
     val books by viewModel.books.collectAsState()
     val activeDirectory by viewModel.activeDirectory.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
@@ -61,7 +66,7 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
             ModalDrawerSheet() {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Library Settings",
+                    text = "SETTINGS",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
@@ -69,7 +74,7 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
 
                 // Watched folder section
                 Text(
-                    text = "LIBRARY FOLDER",
+                    text = "FOLDER PATH",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -90,7 +95,6 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
                     leadingContent = {
                         Icon(Icons.Default.FolderOpen, contentDescription = null)
                     },
-                    // Mengubah warna background menjadi transparan
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     ),
@@ -120,7 +124,6 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
                             onCheckedChange = { viewModel.setDarkMode(it) }
                         )
                     },
-                    // Mengubah warna background menjadi transparan
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     )
@@ -133,7 +136,6 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
                             onCheckedChange = { viewModel.setDynamicColor(it) }
                         )
                     },
-                    // Mengubah warna background menjadi transparan
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     )
@@ -144,7 +146,7 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Your Library") },
+                    title = { Text("My Library") },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         titleContentColor = MaterialTheme.colorScheme.primary
@@ -200,7 +202,7 @@ fun LibraryScreen(viewModel: LibraryViewModel) {
                             BookCard(
                                 book = book,
                                 onClick = {
-                                    // TODO: Navigate to reader
+                                    onBookClick(book)
                                 },
                                 onDelete = { viewModel.deleteBook(book) },
                                 onAnnotations = {
@@ -227,7 +229,6 @@ fun BookCard(
     onAnnotations: () -> Unit,
     onDetail: () -> Unit
 ) {
-    // State menu dipindah ke dalam komponen card
     var showMenu by remember { mutableStateOf(false) }
 
     Box {
@@ -243,44 +244,54 @@ fun BookCard(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Placeholder cover
-                Box(
+            if (!book.coverPath.isNullOrEmpty()) {
+                // Diperbaiki: Menggunakan 'model' dan menambahkan koma penutup
+                AsyncImage(
+                    model = book.coverPath,
+                    contentDescription = "cover ${book.title}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Diperbaiki: Blok else membungkus Column, Spacer, dan Text secara utuh
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoStories,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BookIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = book.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = book.author,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = book.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Text(
-                    text = book.author,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -295,7 +306,7 @@ fun BookCard(
                     showMenu = false
                     onClick()
                 },
-                leadingIcon = { Icon(Icons.Default.AutoStories, contentDescription = null) }
+                leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
             )
             DropdownMenuItem(
                 text = { Text("My Annotations") },
@@ -303,7 +314,7 @@ fun BookCard(
                     showMenu = false
                     onAnnotations()
                 },
-                leadingIcon = { Icon(Icons.Default.BookmarkBorder, contentDescription = null) }
+                leadingIcon = { Icon(Icons.Default.Bookmark, contentDescription = null) }
             )
             DropdownMenuItem(
                 text = { Text("View Book Detail") },
