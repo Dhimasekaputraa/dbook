@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dbook EPUB Reader</title>
+    <script src="epub.min.js"></script>
+    <script src="jszip.min.js"></script>
+    <link rel="stylesheet" href="style.css"></link>
+</head>
+<body>
+    <div id="viewer">
+        <script>
+            var book = null;
+            var rendition = null;
+
+            function loadBookData(bookData) {
+                book = ePub(bookData);
+                
+                rendition = book.renderTo("viewer", {
+                    width: "100%",
+                    height: "100%",
+                    spread: "none",
+                    manager: "continuous",
+                    flow: "paginated"
+                });
+                
+                rendition.display();
+            }
+        </script>
+    </div>
+</body>
+</html>

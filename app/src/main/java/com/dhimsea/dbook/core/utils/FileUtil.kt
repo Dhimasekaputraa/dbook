@@ -1,6 +1,7 @@
 package com.dhimsea.dbook.core.utils
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.dhimsea.dbook.domain.model.BookFormat
@@ -73,5 +74,16 @@ object FileUtil{
             }
         }
         return size
+    }
+
+    fun saveCoverToInternalStorage(context: Context, bitmap: Bitmap, bookId: String): String {
+        val coversDir = File(context.filesDir, "covers").apply { if (!exists()) mkdirs() }
+        val coverFile = File(coversDir, "$bookId.png")
+        
+        FileOutputStream(coverFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
+        }
+        
+        return coverFile.absolutePath
     }
 }
