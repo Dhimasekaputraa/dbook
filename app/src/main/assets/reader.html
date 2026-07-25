@@ -3,31 +3,246 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Dbook EPUB Reader</title>
-    <script src="epub.min.js"></script>
-    <script src="jszip.min.js"></script>
-    <link rel="stylesheet" href="style.css"></link>
+    <title>Dbook Reader</title>
+    <script src="http://127.0.0.1:8080/jszip.min.js"></script>
+    <script src="http://127.0.0.1:8080/epub.min.js"></script>
+    <style>
+        html, body {
+            width: 100%; height: 100%;
+            margin: 0; padding: 0;
+            overflow: hidden;
+            transition: background-color 0.3s;
+        }
+        #viewer { width: 100vw; height: 100vh; display: block; }
+    </style>
 </head>
 <body>
-    <div id="viewer">
-        <script>
-            var book = null;
-            var rendition = null;
+    <div id="viewer"></div>
+    <script>
+        var book = ePub("http://127.0.0.1:8080/book.epub");
+        var rendition = book.renderTo("viewer", {
+            width: "100%", height: "100%",
+            flow: "paginated", spread: "none"
+        });
 
-            function loadBookData(bookData) {
-                book = ePub(bookData);
-                
-                rendition = book.renderTo("viewer", {
-                    width: "100%",
-                    height: "100%",
-                    spread: "none",
-                    manager: "continuous",
-                    flow: "paginated"
+        function setTheme(isDark) {
+            var bg = isDark ? "#121212" : "#ffffff";
+            var text = isDark ? "#e0e0e0" : "#282828";
+            document.body.style.backgroundColor = bg;
+            
+            rendition.themes.default({
+                "body": { 
+                    "background": bg + " !important", 
+                    "color": text + " !important", 
+                    "padding-top": "36px !important",
+                    "padding-bottom": "36px !important",
+                    "padding-left": "24px !important",
+                    "padding-right": "24px !important",
+                    "margin": "0 !important",
+                    "max-width": "100% !important",
+                    "box-sizing": "border-box !important"
+                },
+                "p, div, span": { 
+                    "color": text + " !important",
+                    "font-size": "18px !important",
+                    "line-height": "1.7 !important",
+                    "margin-bottom": "1em !important"
+                },
+                "h1, h2, h3, h4, h5, h6": {
+                    "color": text + " !important",
+                    "line-height": "1.3 !important",
+                    "margin-top": "1.2em !important",
+                    "margin-bottom": "0.6em !important"
+                },
+                "li, a": { "color": text + " !important" },
+                "img, svg": { 
+                    "max-width": "100% !important", 
+                    "max-height": "80vh !important", 
+                    "object-fit": "contain !important" 
+                }
+            });
+        }
+
+        setTheme(false); 
+        rendition.display();
+
+        // 1. MANAJEMEN LOCATIONS & CHAPTER
+        book.ready.then(function() {
+            return book.locations.generate(1600);
+        }).then(function() {
+            var chapterList = [];
+            
+            function parseNavItems(items) {
+                if (!items) return;
+                items.forEach(function(item) {
+                    var cfi = book.locations.cfiFromHref(item.href);
+                    if (cfi) {
+                        var pct = book.locations.percentageFromCfi(cfi);
+                        chapterList.push({ label: item.label.trim(), percent: pct });
+                    }
+                    if (item.subitems && item.subitems.length > 0) {
+                        parseNavItems(item.subitems);
+                    }
                 });
-                
-                rendition.display();
             }
-        </script>
-    </div>
+
+            if (book.navigation && book.navigation.toc) {
+                parseNavItems(book.navigation.toc);
+            }
+
+            if (window.Android) {
+                window.Android.onChaptersLoaded(JSON.stringify(chapterList));
+            }
+
+            if (rendition.currentLocation()) {
+                sendProgress(rendition.currentLocation());
+            }
+        });
+
+        function sendProgress(location) {
+            if (window.Android && location && location.start) {
+                var total = book.locations.total || 1;
+                var currentPage = book.locations.locationFromCfi(location.start.cfi) || 1;
+                var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
+                
+                var chapterName = "Chapter";
+                var cleanHref = location.start.href.split('#')[0];
+                var navItem = book.navigation.get(location.start.href) || book.navigation.get(cleanHref);
+                if (navItem && navItem.label) {
+                    chapterName = navItem.label.trim();
+                }
+
+                window.Android.updateProgress(currentPage, total, percent, chapterName);
+            }
+        }
+
+        rendition.on("relocated", function(location) {
+            sendProgress(location);
+        });
+
+        // 2. NAVIGASI ANDAL (Pencegah Stuck / Blank di Halaman Pertama & Cover)
+        function safeNext() {
+            var loc = rendition.currentLocation();
+            rendition.next().then(function() {
+                var newLoc = rendition.currentLocation();
+                // Jika posisi tidak berubah padahal minta MAJU (stuck di cover/first page)
+                if (loc && newLoc && loc.start.cfi === newLoc.start.cfi) {
+                    var currentIndex = loc.start.index;
+                    if (currentIndex < book.spine.length - 1) {
+                        var nextSpine = book.spine.get(currentIndex + 1);
+                        if (nextSpine) rendition.display(nextSpine.href);
+                    }
+                }
+            }).catch(function() {
+                rendition.next();
+            });
+        }
+
+        function safePrev() {
+            var loc = rendition.currentLocation();
+            if (!loc || !loc.start) {
+                rendition.prev();
+                return;
+            }
+
+            // Mencegah mundur jika kita sudah berada di halaman 1 / paling awal
+            if (loc.start.index === 0 && (loc.atStart || loc.start.displayed.page <= 1)) {
+                return; // Diam di tempat, tidak perlu memunculkan elemen luar
+            }
+
+            rendition.prev().then(function() {
+                var newLoc = rendition.currentLocation();
+                // Jika lokasi tidak berubah (stuck di batas awal berkas chapter)
+                if (newLoc && newLoc.start.cfi === loc.start.cfi) {
+                    var currentSpineIndex = loc.start.index;
+                    if (currentSpineIndex > 0) {
+                        var prevSpine = book.spine.get(currentSpineIndex - 1);
+                        if (prevSpine) rendition.display(prevSpine.href);
+                    }
+                }
+            }).catch(function() {
+                rendition.prev();
+            });
+        }
+
+        // 3. LOGIKA DETEKSI TAP & SWIPE YANG PRESISI
+        var touchStartX = 0, touchStartY = 0;
+        var touchEndX = 0, touchEndY = 0;
+        var initialDistance = 0, isPinching = false;
+        var pinchThreshold = 50, swipeThreshold = 40;
+
+        function getDistance(touches) {
+            var dx = touches[0].clientX - touches[1].clientX;
+            var dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        rendition.hooks.content.register(function(contents) {
+            var doc = contents.document;
+
+            doc.addEventListener("touchstart", function(e) {
+                if (e.touches.length === 2) {
+                    isPinching = true;
+                    initialDistance = getDistance(e.touches);
+                } else if (e.touches.length === 1) {
+                    isPinching = false;
+                    // Menggunakan screenX agar tidak terdistorsi ukuran iframe
+                    touchStartX = e.touches[0].screenX;
+                    touchStartY = e.touches[0].screenY;
+                }
+            }, {passive: false});
+
+            doc.addEventListener("touchmove", function(e) {
+                if (isPinching && e.touches.length === 2 && initialDistance > 0) {
+                    var currentDistance = getDistance(e.touches);
+                    if (initialDistance - currentDistance > pinchThreshold) {
+                        if (window.Android) window.Android.toggleOverview();
+                        initialDistance = 0; 
+                    }
+                }
+            }, {passive: false});
+
+            doc.addEventListener("touchend", function(e) {
+                if (!isPinching && e.changedTouches.length === 1) {
+                    touchEndX = e.changedTouches[0].screenX;
+                    touchEndY = e.changedTouches[0].screenY;
+                    handleTapOrSwipe();
+                }
+                if (e.touches.length < 2) {
+                    initialDistance = 0;
+                    isPinching = false;
+                }
+            }, {passive: false});
+        });
+
+        function handleTapOrSwipe() {
+            var deltaX = touchEndX - touchStartX;
+            var deltaY = touchEndY - touchStartY;
+            var screenWidth = window.screen.width || window.innerWidth;
+
+            // KETUKAN (TAP)
+            if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
+                // Diukur berdasarkan persentase layar fisik smartphone
+                if (touchEndX < screenWidth * 0.35) {
+                    safePrev(); // Tap 35% Kiri -> MUNDUR
+                } else if (touchEndX > screenWidth * 0.65) {
+                    safeNext(); // Tap 35% Kanan -> MAJU
+                }
+            } 
+            // USAPAN (SWIPE)
+            else if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaY) < 100) {
+                if (deltaX < 0) {
+                    safeNext(); // Usap Ke Kiri -> MAJU
+                } else {
+                    safePrev(); // Usap Ke Kanan -> MUNDUR
+                }
+            }
+        }
+
+        function goToPercent(percent) {
+            var cfi = book.locations.cfiFromPercentage(percent);
+            rendition.display(cfi);
+        }
+    </script>
 </body>
 </html>

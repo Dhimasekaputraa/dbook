@@ -1,43 +1,254 @@
 package com.dhimsea.dbook.ui.reader
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
 import android.annotation.SuppressLint
+import androidx.compose.ui.graphics.Color
+import android.graphics.Color as AndroidColor
+import android.util.Log
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.dhimsea.dbook.core.utils.LocalBookServer
+import kotlinx.coroutines.delay
+import org.json.JSONArray
 
-@SuppressLint
+data class ChapterMarker(val label: String, val percent: Float)
+
+class ReaderBridge(
+    private val onProgressUpdate: (Int, Int, Float, String) -> Unit,
+    private val onToggleOverview: () -> Unit,
+    private val onChaptersLoaded: (List<ChapterMarker>) -> Unit
+) {
+    @JavascriptInterface
+    fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String) {
+        onProgressUpdate(currentPage, totalPages, percent, chapterName)
+    }
+
+    @JavascriptInterface
+    fun toggleOverview() {
+        onToggleOverview()
+    }
+
+    @JavascriptInterface
+    fun onChaptersLoaded(jsonString: String) {
+        try {
+            val array = JSONArray(jsonString)
+            val list = mutableListOf<ChapterMarker>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    ChapterMarker(
+                        label = obj.getString("label"),
+                        percent = obj.getDouble("percent").toFloat()
+                    )
+                )
+            }
+            onChaptersLoaded(list)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
 fun ReaderScreen(
-    fileUri: String,
+    filePath: String,
+    isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { context ->
-            WebView(context).apply {
+    val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(true) }
+    var isServerReady by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.allowFileAccess = true
-                settings.allowContentAccess = true
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+    var isOverviewMode by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableIntStateOf(1) }
+    var totalPages by remember { mutableIntStateOf(1) }
+    var currentPercent by remember { mutableFloatStateOf(0f) }
+    var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
+    var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
-                webViewClient = WebViewClient()
+    // State penampung BottomSheet bawaan Material 3
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-                loadUrl("file:///android_asset/reader.html")
-            }
-        },
-        update = { webView ->
-            // TODO (Tahap 3): Di sinilah nanti kita akan mengubah fileUri (path buku)
-            // menjadi data byte/Base64 dan menyuntikkannya ke fungsi JS loadBookData()
-        }
+    val webViewScale by animateFloatAsState(
+        targetValue = if (isOverviewMode) 0.82f else 1f,
+        animationSpec = tween(300),
+        label = "WebViewScale"
     )
+
+    val server = remember { LocalBookServer(context, 8080) }
+
+    LaunchedEffect(isDarkMode) {
+        webViewRef?.evaluateJavascript("setTheme($isDarkMode);", null)
+    }
+
+    LaunchedEffect(filePath) {
+        try {
+            server.serveBook(filePath)
+            if (!server.isAlive) server.start()
+            delay(100)
+            isServerReady = true
+        } catch (e: Exception) {
+            Log.e("ReaderScreen", "Failed starting LocalBookServer: ${e.message}")
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (server.isAlive) server.stop()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isServerReady) {
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(webViewScale)
+                    .clip(RoundedCornerShape(if (isOverviewMode) 20.dp else 0.dp)),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+
+                        setBackgroundColor(if (isDarkMode) AndroidColor.parseColor("#121212") else AndroidColor.parseColor("#ffffff"))
+
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            allowFileAccess = true
+                            allowContentAccess = true
+                            allowFileAccessFromFileURLs = true
+                            allowUniversalAccessFromFileURLs = true
+                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            cacheMode = WebSettings.LOAD_NO_CACHE
+                        }
+
+                        addJavascriptInterface(ReaderBridge(
+                            onProgressUpdate = { page, total, percent, chapter ->
+                                currentPage = page
+                                totalPages = total
+                                currentPercent = percent
+                                currentChapter = chapter
+                            },
+                            onToggleOverview = {
+                                isOverviewMode = true
+                            },
+                            onChaptersLoaded = { chapterList ->
+                                chapters = chapterList
+                            }
+                        ), "Android")
+
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                isLoading = false
+                                view?.evaluateJavascript("setTheme($isDarkMode);", null)
+                            }
+                        }
+
+                        loadUrl("http://127.0.0.1:8080/reader.html")
+                        webViewRef = this
+                    }
+                }
+            )
+        }
+
+        if (isLoading) {
+            CircularProgressIndicator()
+        }
+
+        // --- MATERIAL 3 MODAL BOTTOM SHEET ---
+        if (isOverviewMode) {
+            ModalBottomSheet(
+                onDismissRequest = { isOverviewMode = false },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                scrimColor = Color.Transparent // Menjaga transparansi agar WebView yang mengecil tetap terlihat
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = currentChapter,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = "Halaman $currentPage dari $totalPages",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // SLIDER DENGAN INDIKATOR CHAPTER DOTS
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        // Merender titik-titik lokasi Bab di atas track slider
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val totalWidth = maxWidth
+                            chapters.forEach { chapter ->
+                                val dotOffset = totalWidth * chapter.percent
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = dotOffset)
+                                        .size(6.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                            shape = CircleShape
+                                        )
+                                )
+                            }
+                        }
+
+                        Slider(
+                            value = currentPercent,
+                            onValueChange = { currentPercent = it },
+                            onValueChangeFinished = {
+                                webViewRef?.evaluateJavascript("goToPercent($currentPercent);", null)
+                            },
+                            valueRange = 0f..1f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+    }
 }
