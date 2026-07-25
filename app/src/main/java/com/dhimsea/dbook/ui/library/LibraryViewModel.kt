@@ -17,6 +17,7 @@ import com.dhimsea.dbook.domain.repository.ScanDirectoryRepository
 import com.dhimsea.dbook.domain.repository.ThemeRepository
 import com.dhimsea.dbook.core.utils.EpubUtils
 import java.util.UUID
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,21 +68,20 @@ class LibraryViewModel (
     fun importSingleBook(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileSize = FileUtil.getFileSize(context, uri)
-
-                // cek duplikat by file size
-                if (fileSize != -1L && bookRepository.isFileSizeExists(fileSize)) return@launch
-
                 val documentFile = DocumentFile.fromSingleUri(context, uri) ?: return@launch
                 val fileName = documentFile.name ?: return@launch
                 if (!fileName.endsWith(".epub", ignoreCase = true)) return@launch
 
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+                val copiedFile = FileUtil.copyUriToInternalStorage(context, uri) ?: return@launch
+                val internalPath = copiedFile.absolutePath
+
+                val fileSize = copiedFile.length()
+                if (bookRepository.isFileSizeExists(fileSize)) {
+                    copiedFile.delete()
+                    return@launch
+                }
 
                 val metadata = EpubUtils.extractMetadata(context, uri)
-
                 val coverPath = metadata.coverBitmap?.let { bitmap ->
                     FileUtil.saveCoverToInternalStorage(
                         context = context,
@@ -90,18 +90,13 @@ class LibraryViewModel (
                     )
                 }
 
-                val finalTitle = metadata.title.takeIf { !it.isNullOrBlank() } 
-                    ?: fileName.substringBeforeLast(".")
-
-                val finalAuthor = metadata.author.takeIf { !it.isNullOrBlank() } 
-                    ?: "Unknown Author"
-
                 bookRepository.insertBook(
                     Book(
-                        id = 0L,
-                        title = finalTitle,
-                        author = finalAuthor,
-                        filePath = uri.toString(),
+                        title = metadata.title?.takeIf { it.isNotBlank() }
+                            ?: fileName.substringBeforeLast("."),
+                        author = metadata.author?.takeIf { it.isNotBlank() }
+                            ?: "Unknown Author",
+                        filePath = internalPath,
                         coverPath = coverPath,
                         format = BookFormat.EPUB,
                         fileSize = fileSize
@@ -119,7 +114,6 @@ class LibraryViewModel (
     }
 }
 
-    // Set watched folder baru + sync
     fun setWatchedDirectory(uri: Uri, displayName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -144,7 +138,6 @@ class LibraryViewModel (
         }
     }
 
-    // Refresh manual — sync buku dengan watched folder
     fun refreshLibrary() {
         val dir = activeDirectory.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -159,47 +152,49 @@ class LibraryViewModel (
             val existingPaths = bookRepository.getAllFilePaths().toSet()
 
             scannedBooks.forEach { scanned ->
-                val filePath = scanned.uri.toString()
-                if (filePath !in existingPaths) {
-                    // cek duplikat by file size
-                    val fileSize = FileUtil.getFileSize(context, scanned.uri)
-                    if (fileSize != -1L && bookRepository.isFileSizeExists(fileSize)) return@forEach
-                    
-                    val metadata = EpubUtils.extractMetadata(context, scanned.uri)
+                val sourceUri = scanned.uri
 
-                    val coverPath = metadata.coverBitmap?.let { bitmap ->
-                        FileUtil.saveCoverToInternalStorage(
-                            context = context,
-                            bitmap = bitmap,
-                            bookId = UUID.randomUUID().toString()
-                        )
-                    }
+                val copiedFile = FileUtil.copyUriToInternalStorage(context, sourceUri) ?: return@forEach
+                val internalPath = copiedFile.absolutePath
 
-                    val finalTitle = metadata.title.takeIf { !it.isNullOrBlank() } 
-                        ?: scanned.displayName
+                if (internalPath in existingPaths) return@forEach
 
-                    val finalAuthor = metadata.author.takeIf { !it.isNullOrBlank() } 
-                        ?: "Unknown Author"
+                val fileSize = copiedFile.length()
+                if (bookRepository.isFileSizeExists(fileSize)) {
+                    copiedFile.delete()
+                    return@forEach
+                }
 
-                    bookRepository.insertBook(
-                        Book(
-                            title = finalTitle,
-                            author = finalAuthor,
-                            filePath = filePath,
-                            coverPath = coverPath,
-                            format = BookFormat.EPUB,
-                            fileSize = fileSize
-                        )
+                val metadata = EpubUtils.extractMetadata(context, sourceUri)
+                val coverPath = metadata.coverBitmap?.let { bitmap ->
+                    FileUtil.saveCoverToInternalStorage(
+                        context = context,
+                        bitmap = bitmap,
+                        bookId = copiedFile.nameWithoutExtension
                     )
                 }
+
+                bookRepository.insertBook(
+                    Book(
+                        title = metadata.title?.takeIf { it.isNotBlank() }
+                            ?: scanned.displayName,
+                        author = metadata.author?.takeIf { it.isNotBlank() }
+                            ?: "Unknown Author",
+                        filePath = internalPath,
+                        coverPath = coverPath,
+                        format = BookFormat.EPUB,
+                        fileSize = fileSize
+                    )
+                )
             }
 
-            val scannedPaths = scannedBooks.map { it.uri.toString() }.toSet()
-            existingPaths.forEach { path ->
-                if (path.startsWith(directoryUri.toString()) && path !in scannedPaths) {
+            val existingInternalPaths = bookRepository.getAllFilePaths().toSet()
+            existingInternalPaths.forEach { path ->
+                if (!File(path).exists()) {
                     bookRepository.deleteBookByFilePath(path)
                 }
             }
+
         } finally {
             _isScanning.value = false
         }

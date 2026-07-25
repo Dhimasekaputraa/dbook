@@ -184,7 +184,7 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                             text = if (activeDirectory == null)
                                 "No folder selected.\nOpen menu to select a folder."
                             else
-                                "No books found.\nPull down to refresh or tap + to add books.",
+                                "No books found.\nTap + to add books.",
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyLarge
@@ -201,9 +201,7 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                         items(books, key = { it.id }) { book ->
                             BookCard(
                                 book = book,
-                                onClick = {
-                                    onBookClick(book)
-                                },
+                                onClick = { onBookClick(book) },
                                 onDelete = { viewModel.deleteBook(book) },
                                 onAnnotations = {
                                     // TODO: Navigate to annotations

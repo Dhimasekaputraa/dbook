@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
+import android.util.Log
 import com.dhimsea.dbook.domain.model.BookFormat
 import java.io.File
 import java.io.FileOutputStream
@@ -85,5 +87,31 @@ object FileUtil{
         }
         
         return coverFile.absolutePath
+    }
+
+    fun uriToBase64(context: Context, uriString: String): String? {
+        return try {
+            val uri = Uri.parse(uriString)
+            Log.d("FileUtil", "Trying to open URI: $uri")
+            Log.d("FileUtil", "URI scheme: ${uri.scheme}")
+            
+            val inputStream = if (uri.scheme == "content") {
+                context.contentResolver.openInputStream(uri)
+            } else {
+                val file = File(uriString)
+                if (file.exists()) file.inputStream() else null
+            }
+            
+            Log.d("FileUtil", "InputStream: $inputStream")
+            
+            inputStream?.use { input ->
+                val bytes = input.readBytes()
+                Log.d("FileUtil", "Bytes read: ${bytes.size}")
+                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            }
+        } catch (e: Exception) {
+            Log.e("FileUtil", "Exception: ${e.message}", e)
+            null
+        }
     }
 }

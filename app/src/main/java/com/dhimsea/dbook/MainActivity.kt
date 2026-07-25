@@ -58,18 +58,19 @@ class MainActivity : ComponentActivity() {
                         LibraryScreen (
                             viewModel = libraryViewModel,
                             onBookClick = { book ->
-                                val encodedUri = URLEncoder.encode(book.filePath, StandardCharsets.UTF_8.toString())
-                                navController.navigate(Screen.Reader.createRoute(encodedUri))
+                                val encodedPath = URLEncoder.encode(book.filePath, StandardCharsets.UTF_8.toString())
+                                navController.navigate(Screen.Reader.createRoute(encodedPath))
                             }
                         )
                     }
 
                     composable(Screen.Reader.route) { backStackEntry ->
-                        val encodedUri = backStackEntry.arguments?.getString("encodedUri") ?: ""
-                        val decodedUri = URLDecoder.decode(encodedUri, StandardCharsets.UTF_8.toString())
+                        val encodedPath = backStackEntry.arguments?.getString("filePath") ?: ""
+                        val decodedPath = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8.toString())
 
                         ReaderScreen(
-                            fileUri = decodedUri,
+                            filePath = decodedPath,
+                            isDarkMode = isDarkMode,
                             onBack = { navController.popBackStack() }
                         )
                     }
