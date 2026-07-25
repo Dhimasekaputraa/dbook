@@ -79,6 +79,9 @@ dependencies {
     // Data store
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // NanoHttpd
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
