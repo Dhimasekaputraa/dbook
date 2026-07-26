@@ -25,6 +25,9 @@
             flow: "paginated", spread: "none"
         });
 
+        var urlParams = new URLSearchParams(window.location.search);
+        var initialCfi = urlParams.get('cfi');
+
         function setTheme(isDark) {
             var bg = isDark ? "#121212" : "#ffffff";
             var text = isDark ? "#e0e0e0" : "#282828";
@@ -63,8 +66,13 @@
             });
         }
 
-        setTheme(false); 
-        rendition.display();
+        setTheme(false);
+
+        if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
+            rendition.display(initialCfi);
+        } else {
+            rendition.display();
+        }
 
         // 1. MANAJEMEN LOCATIONS & CHAPTER
         book.ready.then(function() {
@@ -94,16 +102,19 @@
                 window.Android.onChaptersLoaded(JSON.stringify(chapterList));
             }
 
-            if (rendition.currentLocation()) {
-                sendProgress(rendition.currentLocation());
+            var curLoc = rendition.currentLocation();
+            if (curLoc) {
+                sendProgress(curLoc);
             }
         });
 
         function sendProgress(location) {
             if (window.Android && location && location.start) {
                 var total = book.locations.total || 1;
-                var currentPage = book.locations.locationFromCfi(location.start.cfi) || 1;
+                var rawPage = book.locations.locationFromCfi(location.start.cfi);
+                var currentPage = (rawPage && rawPage > 0) ? rawPage : 1;
                 var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
+                var currentCfi = location.start.cfi;
                 
                 var chapterName = "Chapter";
                 var cleanHref = location.start.href.split('#')[0];
@@ -112,7 +123,7 @@
                     chapterName = navItem.label.trim();
                 }
 
-                window.Android.updateProgress(currentPage, total, percent, chapterName);
+                window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi);
             }
         }
 
@@ -120,12 +131,11 @@
             sendProgress(location);
         });
 
-        // 2. NAVIGASI ANDAL (Pencegah Stuck / Blank di Halaman Pertama & Cover)
+        // 2. NAVIGASI AMAN
         function safeNext() {
             var loc = rendition.currentLocation();
             rendition.next().then(function() {
                 var newLoc = rendition.currentLocation();
-                // Jika posisi tidak berubah padahal minta MAJU (stuck di cover/first page)
                 if (loc && newLoc && loc.start.cfi === newLoc.start.cfi) {
                     var currentIndex = loc.start.index;
                     if (currentIndex < book.spine.length - 1) {
@@ -141,31 +151,60 @@
         function safePrev() {
             var loc = rendition.currentLocation();
             if (!loc || !loc.start) {
-                rendition.prev();
                 return;
             }
 
-            // Mencegah mundur jika kita sudah berada di halaman 1 / paling awal
-            if (loc.start.index === 0 && (loc.atStart || loc.start.displayed.page <= 1)) {
-                return; // Diam di tempat, tidak perlu memunculkan elemen luar
+            var currentIndex = loc.start.index;
+
+            // Jika di indeks mutlak 0 dan di awal halaman, hentikan
+            if (currentIndex === 0 && loc.atStart) {
+                return;
             }
 
+            // Coba mundur di dalam file spine saat ini
             rendition.prev().then(function() {
                 var newLoc = rendition.currentLocation();
-                // Jika lokasi tidak berubah (stuck di batas awal berkas chapter)
+                // Jika lokasi tidak berubah (artinya sudah di batas awal file/spine tersebut)
                 if (newLoc && newLoc.start.cfi === loc.start.cfi) {
-                    var currentSpineIndex = loc.start.index;
-                    if (currentSpineIndex > 0) {
-                        var prevSpine = book.spine.get(currentSpineIndex - 1);
-                        if (prevSpine) rendition.display(prevSpine.href);
+                    if (currentIndex > 0) {
+                        var prevSpine = book.spine.get(currentIndex - 1);
+                        if (prevSpine) {
+                            var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
+                            var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
+
+                            // Cegah lompat ke file gambar mentah, sprite, atau cover viewer non-teks
+                            var isRawImageOrSprite = mediaType.startsWith("image/") ||
+                                                     prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
+                                                     prevHref.includes("cvi") ||
+                                                     prevHref.includes("adc");
+
+                            if (isRawImageOrSprite) {
+                                return; // Blokir agar tidak fallback ke sprite/gambar mentah
+                            }
+
+                            rendition.display(prevSpine.href);
+                        }
                     }
                 }
-            }).catch(function() {
-                rendition.prev();
+            }).catch(function(err) {
+                if (currentIndex > 0) {
+                    var prevSpine = book.spine.get(currentIndex - 1);
+                    if (prevSpine) {
+                        var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
+                        var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
+                        var isRawImageOrSprite = mediaType.startsWith("image/") ||
+                                                 prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
+                                                 prevHref.includes("cvi") ||
+                                                 prevHref.includes("adc");
+                        if (!isRawImageOrSprite) {
+                            rendition.display(prevSpine.href);
+                        }
+                    }
+                }
             });
         }
 
-        // 3. LOGIKA DETEKSI TAP & SWIPE YANG PRESISI
+        // 3. LOGIKA DETEKSI TAP & SWIPE
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
         var initialDistance = 0, isPinching = false;
@@ -186,7 +225,6 @@
                     initialDistance = getDistance(e.touches);
                 } else if (e.touches.length === 1) {
                     isPinching = false;
-                    // Menggunakan screenX agar tidak terdistorsi ukuran iframe
                     touchStartX = e.touches[0].screenX;
                     touchStartY = e.touches[0].screenY;
                 }
@@ -220,21 +258,18 @@
             var deltaY = touchEndY - touchStartY;
             var screenWidth = window.screen.width || window.innerWidth;
 
-            // KETUKAN (TAP)
             if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
-                // Diukur berdasarkan persentase layar fisik smartphone
                 if (touchEndX < screenWidth * 0.35) {
-                    safePrev(); // Tap 35% Kiri -> MUNDUR
+                    safePrev();
                 } else if (touchEndX > screenWidth * 0.65) {
-                    safeNext(); // Tap 35% Kanan -> MAJU
+                    safeNext();
                 }
             } 
-            // USAPAN (SWIPE)
             else if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaY) < 100) {
                 if (deltaX < 0) {
-                    safeNext(); // Usap Ke Kiri -> MAJU
+                    safeNext();
                 } else {
-                    safePrev(); // Usap Ke Kanan -> MUNDUR
+                    safePrev();
                 }
             }
         }

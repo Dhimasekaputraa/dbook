@@ -26,19 +26,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.dhimsea.dbook.core.utils.LocalBookServer
+import com.dhimsea.dbook.domain.model.Book
+import com.dhimsea.dbook.domain.repository.BookRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONArray
+import java.net.URLEncoder
 
 data class ChapterMarker(val label: String, val percent: Float)
 
 class ReaderBridge(
-    private val onProgressUpdate: (Int, Int, Float, String) -> Unit,
+    private val onProgressUpdate: (Int, Int, Float, String, String) -> Unit,
     private val onToggleOverview: () -> Unit,
     private val onChaptersLoaded: (List<ChapterMarker>) -> Unit
 ) {
     @JavascriptInterface
-    fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String) {
-        onProgressUpdate(currentPage, totalPages, percent, chapterName)
+    fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String, cfi: String) {
+        onProgressUpdate(currentPage, totalPages, percent, chapterName, cfi)
     }
 
     @JavascriptInterface
@@ -72,10 +77,14 @@ class ReaderBridge(
 @Composable
 fun ReaderScreen(
     filePath: String,
+    bookRepository: BookRepository,
     isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var currentBook by remember { mutableStateOf<Book?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isServerReady by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -87,7 +96,6 @@ fun ReaderScreen(
     var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
     var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
-    // State penampung BottomSheet bawaan Material 3
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val webViewScale by animateFloatAsState(
@@ -97,6 +105,13 @@ fun ReaderScreen(
     )
 
     val server = remember { LocalBookServer(context, 8080) }
+
+    // Fetch book data from database to get lastReadCfi
+    LaunchedEffect(filePath) {
+        scope.launch(Dispatchers.IO) {
+            currentBook = bookRepository.getBookByFilePath(filePath)
+        }
+    }
 
     LaunchedEffect(isDarkMode) {
         webViewRef?.evaluateJavascript("setTheme($isDarkMode);", null)
@@ -145,18 +160,32 @@ fun ReaderScreen(
                             domStorageEnabled = true
                             allowFileAccess = true
                             allowContentAccess = true
+                            @Suppress("DEPRECATION")
                             allowFileAccessFromFileURLs = true
+                            @Suppress("DEPRECATION")
                             allowUniversalAccessFromFileURLs = true
                             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             cacheMode = WebSettings.LOAD_NO_CACHE
                         }
 
                         addJavascriptInterface(ReaderBridge(
-                            onProgressUpdate = { page, total, percent, chapter ->
+                            onProgressUpdate = { page, total, percent, chapter, cfi ->
                                 currentPage = page
                                 totalPages = total
                                 currentPercent = percent
                                 currentChapter = chapter
+
+                                // Save progress to database automatically
+                                currentBook?.let { book ->
+                                    scope.launch(Dispatchers.IO) {
+                                        bookRepository.updateReadingProgress(
+                                            bookId = book.id,
+                                            page = page,
+                                            cfi = cfi,
+                                            progress = percent
+                                        )
+                                    }
+                                }
                             },
                             onToggleOverview = {
                                 isOverviewMode = true
@@ -173,7 +202,13 @@ fun ReaderScreen(
                             }
                         }
 
-                        loadUrl("http://127.0.0.1:8080/reader.html")
+                        // Pass initial CFI to URL
+                        val initialCfi = currentBook?.lastReadCfi
+                        val encodedCfi = if (!initialCfi.isNullOrEmpty()) {
+                            URLEncoder.encode(initialCfi, "UTF-8")
+                        } else ""
+
+                        loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi")
                         webViewRef = this
                     }
                 }
@@ -190,7 +225,7 @@ fun ReaderScreen(
                 onDismissRequest = { isOverviewMode = false },
                 sheetState = sheetState,
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                scrimColor = Color.Transparent // Menjaga transparansi agar WebView yang mengecil tetap terlihat
+                scrimColor = Color.Transparent
             ) {
                 Column(
                     modifier = Modifier
@@ -219,7 +254,6 @@ fun ReaderScreen(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.CenterStart
                     ) {
-                        // Merender titik-titik lokasi Bab di atas track slider
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             val totalWidth = maxWidth
                             chapters.forEach { chapter ->
