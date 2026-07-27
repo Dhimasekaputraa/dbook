@@ -35,7 +35,6 @@ class MainActivity : ComponentActivity() {
             val libraryViewModel: LibraryViewModel = viewModel(
                 factory = LibraryViewModelFactory(
                     bookRepository = app.bookRepository,
-                    scanRepository = app.scanDirectoryRepository,
                     themeRepository = app.themeRepository,
                     context = applicationContext
                 )

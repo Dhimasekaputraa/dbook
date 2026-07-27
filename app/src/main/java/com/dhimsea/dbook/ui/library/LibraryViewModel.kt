@@ -1,36 +1,43 @@
 package com.dhimsea.dbook.ui.library
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.dhimsea.dbook.core.utils.DirectoryScanner
-import com.dhimsea.dbook.data.local.entity.ScanDirectoryEntity
+import com.dhimsea.dbook.core.utils.EpubUtils
 import com.dhimsea.dbook.core.utils.FileUtil
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.model.BookFormat
 import com.dhimsea.dbook.domain.repository.BookRepository
-import com.dhimsea.dbook.domain.repository.ScanDirectoryRepository
 import com.dhimsea.dbook.domain.repository.ThemeRepository
-import com.dhimsea.dbook.core.utils.EpubUtils
-import java.util.UUID
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class LibraryViewModel (
+class LibraryViewModel(
     private val bookRepository: BookRepository,
-    private val scanRepository: ScanDirectoryRepository,
     private val themeRepository: ThemeRepository,
-    private val context: Context 
-):  ViewModel() {
+    private val context: Context
+) : ViewModel() {
+
+    private val notificationManager =
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val CHANNEL_ID = "import_progress_channel"
+    private val NOTIF_ID = 1001
 
     val books: StateFlow<List<Book>> = bookRepository.getAllBooks()
         .stateIn(
@@ -39,14 +46,6 @@ class LibraryViewModel (
             initialValue = emptyList()
         )
 
-    val activeDirectory: StateFlow<ScanDirectoryEntity?> = scanRepository
-        .getActiveDirectory()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
-    
     val isDarkMode: StateFlow<Boolean> = themeRepository.isDarkMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -56,6 +55,27 @@ class LibraryViewModel (
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning
 
+    // SharedFlow untuk Toast / Snackbar di bagian bawah UI
+    private val _uiMessage = MutableSharedFlow<String>()
+    val uiMessage: SharedFlow<String> = _uiMessage.asSharedFlow()
+
+    init {
+        createNotificationChannel()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Import Book Progress",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Menampilkan progress saat mengimpor buku"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
     fun setDarkMode(enabled: Boolean) {
         viewModelScope.launch { themeRepository.setDarkMode(enabled) }
     }
@@ -64,153 +84,132 @@ class LibraryViewModel (
         viewModelScope.launch { themeRepository.setDynamicColor(enabled) }
     }
 
-    // Tambah satu file epub via tombol +
-    fun importSingleBook(uri: Uri) {
+    // Mengimpor banyak buku menggunakan OpenMultipleDocuments
+    fun importBooks(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val documentFile = DocumentFile.fromSingleUri(context, uri) ?: return@launch
-                val fileName = documentFile.name ?: return@launch
-                if (!fileName.endsWith(".epub", ignoreCase = true)) return@launch
+            _isScanning.value = true
+            var successCount = 0
+            var failCount = 0
+            val total = uris.size
 
-                val copiedFile = FileUtil.copyUriToInternalStorage(context, uri) ?: return@launch
-                val internalPath = copiedFile.absolutePath
+            val notifBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle("Mengimpor Buku")
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
 
-                val fileSize = copiedFile.length()
-                if (bookRepository.isFileSizeExists(fileSize)) {
-                    copiedFile.delete()
-                    return@launch
-                }
+            uris.forEachIndexed { index, uri ->
+                val current = index + 1
+                notifBuilder.setContentText("Proses $current dari $total buku...")
+                notifBuilder.setProgress(total, current, false)
+                notificationManager.notify(NOTIF_ID, notifBuilder.build())
 
-                val metadata = EpubUtils.extractMetadata(context, uri)
-                val coverPath = metadata.coverBitmap?.let { bitmap ->
-                    FileUtil.saveCoverToInternalStorage(
-                        context = context,
-                        bitmap = bitmap,
-                        bookId = UUID.randomUUID().toString()
-                    )
-                }
-
-                bookRepository.insertBook(
-                    Book(
-                        title = metadata.title?.takeIf { it.isNotBlank() }
-                            ?: fileName.substringBeforeLast("."),
-                        author = metadata.author?.takeIf { it.isNotBlank() }
-                            ?: "Unknown Author",
-                        filePath = internalPath,
-                        coverPath = coverPath,
-                        format = BookFormat.EPUB,
-                        fileSize = fileSize
-                    )
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
+                val success = processSingleUri(uri)
+                if (success) successCount++ else failCount++
             }
+
+            // Update Notification saat Selesai
+            notifBuilder.setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("Import Selesai")
+                .setContentText("Berhasil: $successCount, Gagal: $failCount")
+                .setProgress(0, 0, false)
+                .setOngoing(false)
+            notificationManager.notify(NOTIF_ID, notifBuilder.build())
+
+            _isScanning.value = false
+
+            // Tampilkan Pesan di UI (Snackbar)
+            val resultMessage = when {
+                successCount > 0 && failCount == 0 -> "Berhasil mengimpor $successCount buku."
+                successCount > 0 && failCount > 0 -> "$successCount buku berhasil diimport, $failCount gagal/duplikat."
+                else -> "Import gagal. Tidak ada buku baru yang ditambahkan."
+            }
+            _uiMessage.emit(resultMessage)
+        }
+    }
+
+    private suspend fun processSingleUri(uri: Uri): Boolean {
+        return try {
+            val documentFile = DocumentFile.fromSingleUri(context, uri) ?: return false
+            val fileName = documentFile.name ?: return false
+            if (!fileName.endsWith(".epub", ignoreCase = true)) return false
+
+            val copiedFile = FileUtil.copyUriToInternalStorage(context, uri) ?: return false
+            val internalPath = copiedFile.absolutePath
+
+            val fileSize = copiedFile.length()
+            if (bookRepository.isFileSizeExists(fileSize)) {
+                copiedFile.delete()
+                return false
+            }
+
+            val metadata = EpubUtils.extractMetadata(context, uri)
+            val coverPath = metadata.coverBitmap?.let { bitmap ->
+                FileUtil.saveCoverToInternalStorage(
+                    context = context,
+                    bitmap = bitmap,
+                    bookId = UUID.randomUUID().toString()
+                )
+            }
+
+            bookRepository.insertBook(
+                Book(
+                    title = metadata.title?.takeIf { it.isNotBlank() }
+                        ?: fileName.substringBeforeLast("."),
+                    author = metadata.author?.takeIf { it.isNotBlank() }
+                        ?: "Unknown Author",
+                    filePath = internalPath,
+                    coverPath = coverPath,
+                    format = BookFormat.EPUB,
+                    fileSize = fileSize
+                )
+            )
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 
     fun deleteBook(book: Book) {
-    viewModelScope.launch(Dispatchers.IO) {
-        bookRepository.deleteBook(book)
-    }
-}
-
-    fun setWatchedDirectory(uri: Uri, displayName: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.deleteBook(book)
+            if (!book.coverPath.isNullOrEmpty()) {
+                File(book.coverPath).delete()
+            }
+            File(book.filePath).delete()
+        }
+    }
+
+    // Refresh Library mandiri: Memeriksa apakah file fisik buku di internal storage masih ada
+    fun refreshLibrary() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isScanning.value = true
             try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-                val currentPaths = bookRepository.getAllFilePaths()
-                val activeDir = activeDirectory.value
-                if (activeDir != null) {
-                    val oldDirUri = Uri.parse(activeDir.uriString)
-                    currentPaths.forEach { path ->
-                        if (path.startsWith(oldDirUri.toString())) {
-                            bookRepository.deleteBookByFilePath(path)
-                        }
+                val existingPaths = bookRepository.getAllFilePaths()
+                existingPaths.forEach { path ->
+                    if (!File(path).exists()) {
+                        bookRepository.deleteBookByFilePath(path)
                     }
                 }
-                scanRepository.setDirectory(uri, displayName)
-                syncWithDirectory(uri)
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } finally {
+                _isScanning.value = false
             }
-        }
-    }
-
-    fun refreshLibrary() {
-        val dir = activeDirectory.value ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            syncWithDirectory(Uri.parse(dir.uriString))
-        }
-    }
-
-    private suspend fun syncWithDirectory(directoryUri: Uri) {
-        _isScanning.value = true
-        try {
-            val scannedBooks = DirectoryScanner.scan(context, directoryUri)
-            val existingPaths = bookRepository.getAllFilePaths().toSet()
-
-            scannedBooks.forEach { scanned ->
-                val sourceUri = scanned.uri
-
-                val copiedFile = FileUtil.copyUriToInternalStorage(context, sourceUri) ?: return@forEach
-                val internalPath = copiedFile.absolutePath
-
-                if (internalPath in existingPaths) return@forEach
-
-                val fileSize = copiedFile.length()
-                if (bookRepository.isFileSizeExists(fileSize)) {
-                    copiedFile.delete()
-                    return@forEach
-                }
-
-                val metadata = EpubUtils.extractMetadata(context, sourceUri)
-                val coverPath = metadata.coverBitmap?.let { bitmap ->
-                    FileUtil.saveCoverToInternalStorage(
-                        context = context,
-                        bitmap = bitmap,
-                        bookId = copiedFile.nameWithoutExtension
-                    )
-                }
-
-                bookRepository.insertBook(
-                    Book(
-                        title = metadata.title?.takeIf { it.isNotBlank() }
-                            ?: scanned.displayName,
-                        author = metadata.author?.takeIf { it.isNotBlank() }
-                            ?: "Unknown Author",
-                        filePath = internalPath,
-                        coverPath = coverPath,
-                        format = BookFormat.EPUB,
-                        fileSize = fileSize
-                    )
-                )
-            }
-
-            val existingInternalPaths = bookRepository.getAllFilePaths().toSet()
-            existingInternalPaths.forEach { path ->
-                if (!File(path).exists()) {
-                    bookRepository.deleteBookByFilePath(path)
-                }
-            }
-
-        } finally {
-            _isScanning.value = false
         }
     }
 }
 
 class LibraryViewModelFactory(
     private val bookRepository: BookRepository,
-    private val scanRepository: ScanDirectoryRepository,
     private val themeRepository: ThemeRepository,
     private val context: Context
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LibraryViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return LibraryViewModel(bookRepository, scanRepository, themeRepository, context) as T
+            return LibraryViewModel(bookRepository, themeRepository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel Class")
     }

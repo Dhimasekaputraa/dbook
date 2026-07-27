@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Book as BookIcon
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
@@ -22,48 +21,51 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dhimsea.dbook.domain.model.Book
-import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.dhimsea.dbook.domain.model.Book
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel,
-                onBookClick: (Book) -> Unit) {
+fun LibraryScreen(
+    viewModel: LibraryViewModel,
+    onBookClick: (Book) -> Unit
+) {
     val books by viewModel.books.collectAsState()
-    val activeDirectory by viewModel.activeDirectory.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val isDynamicColor by viewModel.isDynamicColor.collectAsState()
+
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val folderPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        uri?.let {
-            val displayName = it.lastPathSegment ?: "Selected Folder"
-            viewModel.setWatchedDirectory(it, displayName)
+    // Menggunakan OpenMultipleDocuments agar pengguna bisa memilih 1 atau banyak file sekaligus
+    val multiFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importBooks(uris)
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let { viewModel.importSingleBook(it) }
+    // Listening ke event pesan UI untuk menampilkan Snackbar di bawah
+    LaunchedEffect(Unit) {
+        viewModel.uiMessage.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
     }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
         drawerContent = {
-            ModalDrawerSheet() {
+            ModalDrawerSheet {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "SETTINGS",
@@ -72,42 +74,7 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                 )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Watched folder section
-                Text(
-                    text = "FOLDER PATH",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = activeDirectory?.displayName ?: "No folder selected",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    supportingContent = {
-                        Text(if (activeDirectory != null) "Tap to change folder" else "Tap to select folder")
-                    },
-                    leadingContent = {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null)
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.Transparent
-                    ),
-                    modifier = Modifier
-                        .combinedClickable(
-                            onClick = { folderPickerLauncher.launch(null) }
-                        )
-                        .padding(horizontal = 8.dp)
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Appearance section
+                // Appearance Section
                 Text(
                     text = "APPEARANCE",
                     style = MaterialTheme.typography.labelSmall,
@@ -124,9 +91,7 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                             onCheckedChange = { viewModel.setDarkMode(it) }
                         )
                     },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.Transparent
-                    )
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 ListItem(
                     headlineContent = { Text("Dynamic Color") },
@@ -136,14 +101,13 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                             onCheckedChange = { viewModel.setDynamicColor(it) }
                         )
                     },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.Transparent
-                    )
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
         }
     ) {
         Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 TopAppBar(
                     title = { Text("My Library") },
@@ -160,11 +124,11 @@ fun LibraryScreen(viewModel: LibraryViewModel,
             },
             floatingActionButton = {
                 FloatingActionButton(
-                    onClick = { filePickerLauncher.launch(arrayOf("application/epub+zip")) },
+                    onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Book")
+                    Icon(Icons.Default.Add, contentDescription = "Add Books")
                 }
             }
         ) { paddingValues ->
@@ -181,10 +145,7 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (activeDirectory == null)
-                                "No folder selected.\nOpen menu to select a folder."
-                            else
-                                "No books found.\nTap + to add books.",
+                            text = "Belum ada buku.\nTekan + untuk menambah buku.",
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyLarge
@@ -203,12 +164,8 @@ fun LibraryScreen(viewModel: LibraryViewModel,
                                 book = book,
                                 onClick = { onBookClick(book) },
                                 onDelete = { viewModel.deleteBook(book) },
-                                onAnnotations = {
-                                    // TODO: Navigate to annotations
-                                },
-                                onDetail = {
-                                    // TODO: Navigate to book detail
-                                }
+                                onAnnotations = { },
+                                onDetail = { }
                             )
                         }
                     }
@@ -243,7 +200,6 @@ fun BookCard(
             )
         ) {
             if (!book.coverPath.isNullOrEmpty()) {
-                // Diperbaiki: Menggunakan 'model' dan menambahkan koma penutup
                 AsyncImage(
                     model = book.coverPath,
                     contentDescription = "cover ${book.title}",
@@ -251,7 +207,6 @@ fun BookCard(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Diperbaiki: Blok else membungkus Column, Spacer, dan Text secara utuh
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -293,7 +248,6 @@ fun BookCard(
             }
         }
 
-        // Material 3 Dropdown Menu
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }
