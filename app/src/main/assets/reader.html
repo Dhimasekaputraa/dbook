@@ -12,6 +12,8 @@
             margin: 0; padding: 0;
             overflow: hidden;
             transition: background-color 0.3s;
+            -webkit-user-select: text;
+            user-select: text;
         }
         #viewer { width: 100vw; height: 100vh; display: block; }
 
@@ -194,7 +196,7 @@
             });
         }
 
-        // --- MANAJEMEN GESTURE PINCH SATU ARAH ---
+        // --- MANAJEMEN GESTURE PINCH SATU ARAH & NAVIGASI ASLI ---
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
         var initialDistance = 0, isPinching = false;
@@ -225,18 +227,16 @@
                     var currentDistance = getDistance(e.touches);
                     var deltaDistance = currentDistance - initialDistance;
 
-                    // PINCH IN (Dua jari mendekat) -> HANYA DIPROSES JIKA SAAT INI FULLSCREEN
                     if (deltaDistance < -pinchThreshold) {
                         if (!isOverviewActive) {
-                            isOverviewActive = true; // Kunci status secara instant
+                            isOverviewActive = true;
                             if (window.Android) window.Android.openOverview();
                         }
                         initialDistance = 0; 
                     } 
-                    // PINCH OUT / ZOOM OUT (Dua jari menjauh) -> HANYA DIPROSES JIKA SAAT INI OVERVIEW
                     else if (deltaDistance > pinchThreshold) {
                         if (isOverviewActive) {
-                            isOverviewActive = false; // Kunci status secara instant
+                            isOverviewActive = false;
                             if (window.Android) window.Android.closeOverview();
                         }
                         initialDistance = 0;
@@ -255,6 +255,30 @@
                     isPinching = false;
                 }
             }, {passive: false});
+
+            // --- TAMBAHAN AMAN: DETEKSI SELEKSI TEKS UNTUK CUSTOM POPUP COMPOSE ---
+            doc.addEventListener("selectionchange", function() {
+                var sel = doc.getSelection();
+                if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                    try {
+                        var selectedText = sel.toString().trim();
+                        var range = sel.getRangeAt(0);
+                        var cfi = contents.cfiFromRange(range);
+                        var rect = range.getBoundingClientRect();
+                        if (window.Android && cfi) {
+                            window.Android.onTextSelectedWithPosition(
+                                cfi, selectedText,
+                                rect.left + (rect.width / 2),
+                                rect.bottom
+                            );
+                        }
+                    } catch(err) {}
+                } else {
+                    if (window.Android) {
+                        window.Android.onSelectionCleared();
+                    }
+                }
+            });
         });
 
         function handleTapOrSwipe() {
@@ -285,6 +309,31 @@
         function goToPercent(percent) {
             var cfi = book.locations.cfiFromPercentage(percent);
             rendition.display(cfi);
+        }
+
+        function applyHighlight(cfi, colorHex) {
+            rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
+                "fill": colorHex,
+                "fill-opacity": "0.35",
+                "mix-blend-mode": "multiply"
+            });
+            var iframe = document.querySelector("iframe");
+            if (iframe && iframe.contentDocument) {
+                iframe.contentDocument.getSelection().removeAllRanges();
+            }
+        }
+
+        function loadAnnotations(annotationsJson) {
+            try {
+                var list = JSON.parse(annotationsJson);
+                list.forEach(function(item) {
+                    rendition.annotations.highlight(item.cfi, {}, function(e) {}, "hl-" + item.id, {
+                        "fill": item.colorHex,
+                        "fill-opacity": "0.35",
+                        "mix-blend-mode": "multiply"
+                    });
+                });
+            } catch(e) { console.error(e); }
         }
     </script>
 </body>

@@ -1,5 +1,6 @@
 package com.dhimsea.dbook.domain.repository
 
+import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.Flow
 
@@ -14,4 +15,8 @@ interface BookRepository{
     suspend fun deleteBookByFilePath(filePath: String)
     suspend fun isFileSizeExists(fileSize: Long): Boolean
     suspend fun updateReadingProgress(bookId: Long, page: Int, cfi: String?, progress: Float)
+    
+    fun getAnnotationsForBook(bookId: Long): Flow<List<Annotation>>
+    suspend fun insertAnnotation(annotation: Annotation): Long
+    suspend fun deleteAnnotation(annotation: Annotation)
 }

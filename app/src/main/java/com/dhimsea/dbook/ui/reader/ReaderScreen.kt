@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Color as AndroidColor
 import android.util.Log
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -26,6 +29,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,15 +40,20 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.dhimsea.dbook.core.utils.LocalBookServer
+import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.repository.BookRepository
 import kotlinx.coroutines.Dispatchers
@@ -54,12 +64,21 @@ import java.net.URLEncoder
 
 data class ChapterMarker(val label: String, val percent: Float)
 
+data class PendingSelection(
+    val cfi: String,
+    val text: String,
+    val posX: Float,
+    val posY: Float
+)
+
 class ReaderBridge(
     private val onProgressUpdate: (Int, Int, Float, String, String) -> Unit,
     private val onToggleOverview: () -> Unit,
     private val onOpenOverview: () -> Unit,
     private val onCloseOverview: () -> Unit,
-    private val onChaptersLoaded: (List<ChapterMarker>) -> Unit
+    private val onChaptersLoaded: (List<ChapterMarker>) -> Unit,
+    private val onTextSelected: (String, String, Float, Float) -> Unit,
+    private val onSelectionCleared: () -> Unit
 ) {
     @JavascriptInterface
     fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String, cfi: String) {
@@ -67,19 +86,13 @@ class ReaderBridge(
     }
 
     @JavascriptInterface
-    fun toggleOverview() {
-        onToggleOverview()
-    }
+    fun toggleOverview() { onToggleOverview() }
 
     @JavascriptInterface
-    fun openOverview() {
-        onOpenOverview()
-    }
+    fun openOverview() { onOpenOverview() }
 
     @JavascriptInterface
-    fun closeOverview() {
-        onCloseOverview()
-    }
+    fun closeOverview() { onCloseOverview() }
 
     @JavascriptInterface
     fun onChaptersLoaded(jsonString: String) {
@@ -100,18 +113,31 @@ class ReaderBridge(
             e.printStackTrace()
         }
     }
+
+    @JavascriptInterface
+    fun onTextSelectedWithPosition(cfi: String, text: String, posX: Float, posY: Float) {
+        onTextSelected(cfi, text, posX, posY)
+    }
+
+    @JavascriptInterface
+    fun onSelectionCleared() {
+        onSelectionCleared()
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
 fun ReaderScreen(
     filePath: String,
+    initialCfiToJump: String? = null,
     bookRepository: BookRepository,
+    onOpenAnnotationScreen: (Long) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isDarkMode = isSystemInDarkTheme()
+    val density = LocalDensity.current.density
 
     var currentBook by remember { mutableStateOf<Book?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -125,7 +151,17 @@ fun ReaderScreen(
     var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
     var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
-    // Efek Status Bar & Kunci Scroll WebView via JS
+    // State Seleksi Teks & Dialog Note
+    var pendingSelection by remember { mutableStateOf<PendingSelection?>(null) }
+    var showNoteDialog by remember { mutableStateOf(false) }
+
+    val presetColors = listOf(
+        "#FFEB3B" to Color(0xFFFFEB3B), // Yellow
+        "#4CAF50" to Color(0xFF4CAF50), // Green
+        "#2196F3" to Color(0xFF2196F3), // Blue
+        "#E91E63" to Color(0xFFE91E63)  // Pink
+    )
+
     LaunchedEffect(isOverviewMode) {
         val window = (context as? Activity)?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
@@ -140,48 +176,17 @@ fun ReaderScreen(
         }
     }
 
-    // ANIMASI GPU TRANSISI LELAP
-    val spec = spring<Float>(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessMediumLow
-    )
-
-    val animatedScale by animateFloatAsState(
-        targetValue = if (isOverviewMode) 0.76f else 1.0f,
-        animationSpec = spec,
-        label = "animatedScale"
-    )
-
-    val animatedOffsetY by animateFloatAsState(
-        targetValue = if (isOverviewMode) -20f else 0f,
-        animationSpec = spec,
-        label = "animatedOffsetY"
-    )
-
-    val animatedCornerRadius by animateFloatAsState(
-        targetValue = if (isOverviewMode) 16f else 0f,
-        animationSpec = spec,
-        label = "animatedCornerRadius"
-    )
-
-    val animatedElevation by animateFloatAsState(
-        targetValue = if (isOverviewMode) 12f else 0f,
-        animationSpec = spec,
-        label = "animatedElevation"
-    )
-
-    val outerBackgroundColor = if (isOverviewMode) {
-        MaterialTheme.colorScheme.surfaceContainer
-    } else {
-        if (isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
-    }
+    val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    val animatedScale by animateFloatAsState(targetValue = if (isOverviewMode) 0.76f else 1.0f, animationSpec = spec, label = "")
+    val animatedOffsetY by animateFloatAsState(targetValue = if (isOverviewMode) -20f else 0f, animationSpec = spec, label = "")
+    val animatedCornerRadius by animateFloatAsState(targetValue = if (isOverviewMode) 16f else 0f, animationSpec = spec, label = "")
+    val animatedElevation by animateFloatAsState(targetValue = if (isOverviewMode) 12f else 0f, animationSpec = spec, label = "")
+    val outerBackgroundColor = if (isOverviewMode) MaterialTheme.colorScheme.surfaceContainer else if (isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
 
     val server = remember { LocalBookServer(context, 8080) }
 
     LaunchedEffect(filePath) {
-        scope.launch(Dispatchers.IO) {
-            currentBook = bookRepository.getBookByFilePath(filePath)
-        }
+        scope.launch(Dispatchers.IO) { currentBook = bookRepository.getBookByFilePath(filePath) }
     }
 
     LaunchedEffect(isDarkMode) {
@@ -204,10 +209,32 @@ fun ReaderScreen(
             if (server.isAlive) server.stop()
             val window = (context as? Activity)?.window
             if (window != null) {
-                WindowCompat.getInsetsController(window, window.decorView)
-                    .show(WindowInsetsCompat.Type.systemBars())
+                WindowCompat.getInsetsController(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
             }
         }
+    }
+
+    // Fungsi Simpan Anotasi ke Database & WebView
+    fun saveAnnotation(colorHex: String, noteText: String = "") {
+        val currentSelection = pendingSelection ?: return
+        val bookId = currentBook?.id ?: return
+
+        scope.launch(Dispatchers.IO) {
+            val newAnnotation = Annotation(
+                bookId = bookId,
+                cfi = currentSelection.cfi,
+                chapterName = currentChapter,
+                pageNumber = currentPage,
+                text = currentSelection.text,
+                note = noteText,
+                colorHex = colorHex
+            )
+            bookRepository.insertAnnotation(newAnnotation)
+        }
+
+        webViewRef?.evaluateJavascript("applyHighlight('${currentSelection.cfi}', '$colorHex');", null)
+        pendingSelection = null
+        showNoteDialog = false
     }
 
     Box(
@@ -215,7 +242,7 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(outerBackgroundColor)
     ) {
-        // --- TOP BAR OVERVIEW ---
+        // --- OVERVIEW TOP BAR ---
         AnimatedVisibility(
             visible = isOverviewMode,
             enter = slideInVertically { -it } + fadeIn(),
@@ -232,11 +259,7 @@ fun ReaderScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(
                     text = currentBook?.title ?: "",
@@ -259,10 +282,7 @@ fun ReaderScreen(
                     scaleY = animatedScale
                     translationY = animatedOffsetY * density
                 }
-                .shadow(
-                    elevation = animatedElevation.dp,
-                    shape = RoundedCornerShape(animatedCornerRadius.dp)
-                )
+                .shadow(elevation = animatedElevation.dp, shape = RoundedCornerShape(animatedCornerRadius.dp))
                 .clip(RoundedCornerShape(animatedCornerRadius.dp)),
             contentAlignment = Alignment.Center
         ) {
@@ -270,7 +290,35 @@ fun ReaderScreen(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        WebView(ctx).apply {
+                        // OVERRIDE ACTION MODE TAPI TETAP KEMBALIKAN TRUE
+                        object : WebView(ctx) {
+                            private val emptyActionModeCallback = object : ActionMode.Callback {
+                                override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                                    // Bersihkan menu Copy/Share bawaan Android secara paksa
+                                    menu?.clear()
+                                    // KEMBALIKAN TRUE: Android akan tetap menandai blok teks (kursor biru),
+                                    // dan tidak merusak gesture sistem!
+                                    return true 
+                                }
+                                override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                                    menu?.clear()
+                                    return true
+                                }
+                                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) = false
+                                override fun onDestroyActionMode(mode: ActionMode?) {
+                                    // Sinyal bahwa teks di-unselect (misal tap layar sembarangan)
+                                }
+                            }
+
+                            override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
+                                return super.startActionMode(emptyActionModeCallback)
+                            }
+
+                            override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
+                                return super.startActionMode(emptyActionModeCallback, type)
+                            }
+
+                        }.apply {
                             layoutParams = ViewGroup.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -300,26 +348,21 @@ fun ReaderScreen(
 
                                     currentBook?.let { book ->
                                         scope.launch(Dispatchers.IO) {
-                                            bookRepository.updateReadingProgress(
-                                                bookId = book.id,
-                                                page = page,
-                                                cfi = cfi,
-                                                progress = percent
-                                            )
+                                            bookRepository.updateReadingProgress(bookId = book.id, page = page, cfi = cfi, progress = percent)
                                         }
                                     }
                                 },
-                                onToggleOverview = {
-                                    isOverviewMode = !isOverviewMode
+                                onToggleOverview = { isOverviewMode = !isOverviewMode },
+                                onOpenOverview = { isOverviewMode = true },
+                                onCloseOverview = { isOverviewMode = false },
+                                onChaptersLoaded = { chapterList -> chapters = chapterList },
+                                onTextSelected = { cfi, text, posX, posY ->
+                                    // Teks diblok -> Tampilkan Popup Custom
+                                    pendingSelection = PendingSelection(cfi, text, posX, posY)
                                 },
-                                onOpenOverview = {
-                                    isOverviewMode = true
-                                },
-                                onCloseOverview = {
-                                    isOverviewMode = false
-                                },
-                                onChaptersLoaded = { chapterList ->
-                                    chapters = chapterList
+                                onSelectionCleared = {
+                                    // Klik di tempat lain -> Hapus Popup Custom
+                                    pendingSelection = null
                                 }
                             ), "Android")
 
@@ -327,14 +370,31 @@ fun ReaderScreen(
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
                                     view?.evaluateJavascript("setTheme($isDarkMode);", null)
+                                    
+                                    // Load Anotasi yang sudah disimpan sebelumnya
+                                    currentBook?.id?.let { bookId ->
+                                        scope.launch(Dispatchers.IO) {
+                                            bookRepository.getAnnotationsForBook(bookId).collect { annotations ->
+                                                val jsonArray = JSONArray()
+                                                annotations.forEach { item ->
+                                                    val obj = org.json.JSONObject().apply {
+                                                        put("id", item.id)
+                                                        put("cfi", item.cfi)
+                                                        put("colorHex", item.colorHex)
+                                                    }
+                                                    jsonArray.put(obj)
+                                                }
+                                                launch(Dispatchers.Main) {
+                                                    view?.evaluateJavascript("loadAnnotations('${jsonArray.toString()}');", null)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
-                            val initialCfi = currentBook?.lastReadCfi
-                            val encodedCfi = if (!initialCfi.isNullOrEmpty()) {
-                                URLEncoder.encode(initialCfi, "UTF-8")
-                            } else ""
-
+                            val targetCfi = initialCfiToJump ?: currentBook?.lastReadCfi
+                            val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
                             loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi")
                             webViewRef = this
                         }
@@ -342,8 +402,6 @@ fun ReaderScreen(
                 )
             }
 
-            // TRANSPARENT CLICK OVERLAY SAAT OVERVIEW MODE
-            // Mencegah interaksi scroll teks & Memicu Kembali ke Fullscreen jika ditap
             if (isOverviewMode) {
                 Box(
                     modifier = Modifier
@@ -359,6 +417,77 @@ fun ReaderScreen(
 
             if (isLoading) {
                 CircularProgressIndicator()
+            }
+        }
+
+        // --- POPUP MENU CUSTOM (MUNCUL DI LOKASI KLIK/PILIH SEPERTI DI LIBRARY) ---
+        if (pendingSelection != null && !showNoteDialog) {
+            val pxX = (pendingSelection!!.posX * density).toInt()
+            val pxY = (pendingSelection!!.posY * density).toInt()
+
+            Popup(
+                alignment = Alignment.TopStart,
+                // Kita posisikan sedikit di atas/bawah area sentuh agar tidak tertutup jari
+                offset = IntOffset(x = (pxX - (100 * density)).toInt(), y = (pxY + (10 * density)).toInt()), 
+                onDismissRequest = {
+                    pendingSelection = null
+                    webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
+                },
+                properties = PopupProperties(focusable = true)
+            ) {
+                Card(
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(220.dp)
+                            .padding(vertical = 8.dp)
+                    ) {
+                        // BARIS 1: BULATAN WARNA UNTUK HIGHLIGHT LANGSUNG
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            presetColors.forEach { (hex, color) ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .clickable { saveAnnotation(hex, "") }
+                                )
+                            }
+                        }
+                        
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        
+                        // BARIS 2: MENU ADD NOTE SEPERTI LIBRARY SCREEN
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showNoteDialog = true }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EditNote,
+                                contentDescription = "Add Note",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Add Note",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -390,38 +519,33 @@ fun ReaderScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(
+                        onClick = { currentBook?.id?.let { id -> onOpenAnnotationScreen(id) } },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Bookmark, contentDescription = "Annotation", tint = MaterialTheme.colorScheme.primary)
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(32.dp),
+                        modifier = Modifier.weight(1f).height(32.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         BoxWithConstraints(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp)
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp)
                         ) {
                             val totalWidth = maxWidth
                             chapters.forEach { chapter ->
                                 val dotOffset = totalWidth * chapter.percent
-                                Box(
-                                    modifier = Modifier
-                                        .offset(x = dotOffset)
-                                        .size(5.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                            shape = CircleShape
-                                        )
-                                )
+                                Box(modifier = Modifier.offset(x = dotOffset).size(5.dp).background(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), shape = CircleShape))
                             }
                         }
 
                         Slider(
                             value = currentPercent,
                             onValueChange = { currentPercent = it },
-                            onValueChangeFinished = {
-                                webViewRef?.evaluateJavascript("goToPercent($currentPercent);", null)
-                            },
+                            onValueChangeFinished = { webViewRef?.evaluateJavascript("goToPercent($currentPercent);", null) },
                             valueRange = 0f..1f,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -429,14 +553,70 @@ fun ReaderScreen(
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    Text(
-                        text = "$currentPage/$totalPages",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Text(text = "$currentPage/$totalPages", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
+    }
+
+    // --- MODAL DIALOG UNTUK MENULIS NOTE ---
+    if (showNoteDialog && pendingSelection != null) {
+        var noteInput by remember { mutableStateOf("") }
+        var selectedColorHex by remember { mutableStateOf("#FFEB3B") }
+
+        AlertDialog(
+            onDismissRequest = {
+                showNoteDialog = false
+                pendingSelection = null
+                webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
+            },
+            title = { Text("Tambah Catatan") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = "“${pendingSelection?.text}”",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        label = { Text("Tuliskan Catatan...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+
+                    Column {
+                        Text("Pilih Warna Highlight:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            presetColors.forEach { (hex, color) ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .clickable { selectedColorHex = hex }
+                                        .then(if (selectedColorHex == hex) Modifier.shadow(6.dp, CircleShape) else Modifier)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { saveAnnotation(selectedColorHex, noteInput) }) { Text("Simpan") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showNoteDialog = false
+                    pendingSelection = null
+                    webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
+                }) { Text("Batal") }
+            }
+        )
     }
 }

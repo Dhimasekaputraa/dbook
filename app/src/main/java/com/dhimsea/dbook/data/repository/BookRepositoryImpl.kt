@@ -1,6 +1,9 @@
 package com.dhimsea.dbook.data.repository
 
+import com.dhimsea.dbook.data.local.dao.AnnotationDao
 import com.dhimsea.dbook.data.local.dao.BookDao
+import com.dhimsea.dbook.data.local.entity.AnnotationEntity
+import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.data.local.entity.toDomainModel
 import com.dhimsea.dbook.data.local.entity.toEntity
 import com.dhimsea.dbook.domain.model.Book
@@ -9,7 +12,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class BookRepositoryImpl(
-    private val bookDao: BookDao
+    private val bookDao: BookDao,
+    private val annotationDao : AnnotationDao
 ) : BookRepository{
     override fun getAllBooks(): Flow<List<Book>> {
         return bookDao.getAllBooks().map { entities ->
@@ -57,4 +61,42 @@ class BookRepositoryImpl(
     ) {
         bookDao.updateReadingProgress(bookId, page, cfi, progress)
     }
+
+    override fun getAnnotationsForBook(bookId: Long): Flow<List<Annotation>> {
+        return annotationDao.getAnnotationsForBook(bookId).map { entityList ->
+        entityList.map { it.toDomain() } }
+    }
+
+    override suspend fun insertAnnotation(annotation: Annotation): Long {
+        return annotationDao.insertAnnotation(annotation.toEntity())
+    }
+
+    override suspend fun deleteAnnotation(annotation: Annotation) {
+        annotationDao.deleteAnnotation(annotation.toEntity())
+    }
+
+    // --- MAPPER FUNCTIONS ---
+    private fun AnnotationEntity.toDomain() = Annotation(
+        id = id,
+        bookId = bookId,
+        cfi = cfi,
+        chapterName = chapterName,
+        pageNumber = pageNumber,
+        text = text,
+        note = note,
+        colorHex = colorHex,
+        createdAt = createdAt
+    )
+
+    private fun Annotation.toEntity() = AnnotationEntity(
+        id = id,
+        bookId = bookId,
+        cfi = cfi,
+        chapterName = chapterName,
+        pageNumber = pageNumber,
+        text = text,
+        note = note,
+        colorHex = colorHex,
+        createdAt = createdAt
+    )
 }

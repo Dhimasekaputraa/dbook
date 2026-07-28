@@ -36,7 +36,8 @@ import kotlinx.coroutines.flow.collectLatest
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
-    onBookClick: (Book) -> Unit
+    onBookClick: (Book) -> Unit,
+    onAnnotationClick: (Book) -> Unit
 ) {
     val context = LocalContext.current
     val books by viewModel.books.collectAsState()
@@ -125,7 +126,7 @@ fun LibraryScreen(
                             book = book,
                             onClick = { onBookClick(book) },
                             onDelete = { viewModel.deleteBook(book) },
-                            onAnnotations = { },
+                            onAnnotations = { onAnnotationClick(book) },
                             onDetail = { }
                         )
                     }
