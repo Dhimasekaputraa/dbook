@@ -13,7 +13,7 @@ interface BookRepository{
     suspend fun updateBook(book: Book)
     suspend fun deleteBook(book: Book)
     suspend fun deleteBookByFilePath(filePath: String)
-    suspend fun isFileSizeExists(fileSize: Long): Boolean
+    suspend fun isBookExists(title: String, fileSize: Long): Boolean
     suspend fun updateReadingProgress(bookId: Long, page: Int, cfi: String?, progress: Float)
     
     fun getAnnotationsForBook(bookId: Long): Flow<List<Annotation>>

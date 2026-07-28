@@ -135,16 +135,18 @@ class LibraryViewModel(
             val fileName = documentFile.name ?: return false
             if (!fileName.endsWith(".epub", ignoreCase = true)) return false
 
-            val copiedFile = FileUtil.copyUriToInternalStorage(context, uri) ?: return false
-            val internalPath = copiedFile.absolutePath
-
-            val fileSize = copiedFile.length()
-            if (bookRepository.isFileSizeExists(fileSize)) {
-                copiedFile.delete()
+            val fileSize = FileUtil.getFileSize(context, uri)
+            val metadata = EpubUtils.extractMetadata(context, uri)
+            val bookTitle = metadata.title?.takeIf { it.isNotBlank() }
+                ?: fileName.substringBeforeLast(".")
+            
+            if ( fileSize > 0 && bookRepository.isBookExists(bookTitle, fileSize)) {
                 return false
             }
 
-            val metadata = EpubUtils.extractMetadata(context, uri)
+            val copiedFile = FileUtil.copyUriToInternalStorage(context, uri) ?: return false
+            val internalPath = copiedFile.absolutePath
+
             val coverPath = metadata.coverBitmap?.let { bitmap ->
                 FileUtil.saveCoverToInternalStorage(
                     context = context,

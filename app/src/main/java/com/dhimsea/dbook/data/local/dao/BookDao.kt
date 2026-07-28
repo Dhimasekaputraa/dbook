@@ -26,8 +26,8 @@ interface BookDao {
     @Query("DELETE FROM books WHERE filePath = :filePath")
     suspend fun deleteBookByFilePath(filePath: String)
 
-    @Query("SELECT COUNT(*) FROM books WHERE fileSize = :fileSize AND fileSize != -1")
-    suspend fun countBooksByFileSize(fileSize: Long): Int
+    @Query("SELECT EXISTS(SELECT 1 FROM books WHERE title = :title AND fileSize = :fileSize)")
+    suspend fun isBookExists(title: String, fileSize: Long): Boolean
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBook(book: BookEntity): Long

@@ -49,8 +49,8 @@ class BookRepositoryImpl(
         bookDao.deleteBookByFilePath(filePath)
     }
 
-    override suspend fun isFileSizeExists(fileSize: Long): Boolean {
-        return bookDao.countBooksByFileSize(fileSize) > 0
+    override suspend fun isBookExists(title: String, fileSize: Long): Boolean {
+        return bookDao.isBookExists(title, fileSize)
     }
 
     override suspend fun updateReadingProgress(
