@@ -8,21 +8,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import com.dhimsea.dbook.core.designsystem.DbookTheme
 import com.dhimsea.dbook.ui.library.LibraryScreen
 import com.dhimsea.dbook.ui.library.LibraryViewModel
 import com.dhimsea.dbook.ui.library.LibraryViewModelFactory
 import com.dhimsea.dbook.ui.navigation.Screen
 import com.dhimsea.dbook.ui.reader.ReaderScreen
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.net.URLDecoder
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,23 +29,16 @@ class MainActivity : ComponentActivity() {
             val libraryViewModel: LibraryViewModel = viewModel(
                 factory = LibraryViewModelFactory(
                     bookRepository = app.bookRepository,
-                    themeRepository = app.themeRepository,
                     context = applicationContext
                 )
             )
 
-            val isDarkMode by libraryViewModel.isDarkMode.collectAsState()
-            val isDynamicColor by libraryViewModel.isDynamicColor.collectAsState()
-
-            DbookTheme(
-                darkTheme = isDarkMode,
-                dynamicColor = isDynamicColor
-            ) {
+            DbookTheme {
                 val navController = rememberNavController()
-            
+
                 NavHost(navController = navController, startDestination = Screen.Library.route) {
                     composable(Screen.Library.route) {
-                        LibraryScreen (
+                        LibraryScreen(
                             viewModel = libraryViewModel,
                             onBookClick = { book ->
                                 val encodedPath = URLEncoder.encode(book.filePath, StandardCharsets.UTF_8.toString())
@@ -67,28 +54,11 @@ class MainActivity : ComponentActivity() {
                         ReaderScreen(
                             filePath = decodedPath,
                             bookRepository = app.bookRepository,
-                            isDarkMode = isDarkMode,
                             onBack = { navController.popBackStack() }
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    DbookTheme {
-        Greeting("Android")
     }
 }

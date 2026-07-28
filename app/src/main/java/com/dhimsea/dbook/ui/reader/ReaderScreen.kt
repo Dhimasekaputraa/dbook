@@ -12,6 +12,7 @@ import android.webkit.WebViewClient
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,11 +79,12 @@ class ReaderBridge(
 fun ReaderScreen(
     filePath: String,
     bookRepository: BookRepository,
-    isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    
+    val isDarkMode = isSystemInDarkTheme()
 
     var currentBook by remember { mutableStateOf<Book?>(null) }
     var isLoading by remember { mutableStateOf(true) }

@@ -15,7 +15,6 @@ import com.dhimsea.dbook.core.utils.FileUtil
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.model.BookFormat
 import com.dhimsea.dbook.domain.repository.BookRepository
-import com.dhimsea.dbook.domain.repository.ThemeRepository
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +29,6 @@ import kotlinx.coroutines.launch
 
 class LibraryViewModel(
     private val bookRepository: BookRepository,
-    private val themeRepository: ThemeRepository,
     private val context: Context
 ) : ViewModel() {
 
@@ -46,16 +44,9 @@ class LibraryViewModel(
             initialValue = emptyList()
         )
 
-    val isDarkMode: StateFlow<Boolean> = themeRepository.isDarkMode
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    val isDynamicColor: StateFlow<Boolean> = themeRepository.isDynamicColor
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning
 
-    // SharedFlow untuk Toast / Snackbar di bagian bawah UI
     private val _uiMessage = MutableSharedFlow<String>()
     val uiMessage: SharedFlow<String> = _uiMessage.asSharedFlow()
 
@@ -76,15 +67,6 @@ class LibraryViewModel(
         }
     }
 
-    fun setDarkMode(enabled: Boolean) {
-        viewModelScope.launch { themeRepository.setDarkMode(enabled) }
-    }
-
-    fun setDynamicColor(enabled: Boolean) {
-        viewModelScope.launch { themeRepository.setDynamicColor(enabled) }
-    }
-
-    // Mengimpor banyak buku menggunakan OpenMultipleDocuments
     fun importBooks(uris: List<Uri>) {
         if (uris.isEmpty()) return
 
@@ -95,7 +77,7 @@ class LibraryViewModel(
             val total = uris.size
 
             val canShowNotification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == 
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
                         android.content.pm.PackageManager.PERMISSION_GRANTED
             } else {
                 true
@@ -109,16 +91,21 @@ class LibraryViewModel(
 
             uris.forEachIndexed { index, uri ->
                 val current = index + 1
-                notifBuilder.setContentText("Proses $current dari $total buku...")
-                notifBuilder.setProgress(total, current, false)
-                notificationManager.notify(NOTIF_ID, notifBuilder.build())
+                if (canShowNotification) {
+                    notifBuilder.setContentText("Proses $current dari $total buku...")
+                    notifBuilder.setProgress(total, current, false)
+                    try {
+                        notificationManager.notify(NOTIF_ID, notifBuilder.build())
+                    } catch (e: SecurityException) {
+                        e.printStackTrace()
+                    }
+                }
 
                 val success = processSingleUri(uri)
                 if (success) successCount++ else failCount++
             }
 
-            // Update Notification saat Selesai
-            if (canShowNotification){
+            if (canShowNotification) {
                 notifBuilder.setSmallIcon(android.R.drawable.stat_sys_download_done)
                     .setContentTitle("Import Selesai")
                     .setContentText("Berhasil: $successCount, Gagal: $failCount")
@@ -128,12 +115,11 @@ class LibraryViewModel(
                     notificationManager.notify(NOTIF_ID, notifBuilder.build())
                 } catch (e: SecurityException) {
                     e.printStackTrace()
-                }   
+                }
             }
 
             _isScanning.value = false
 
-            // Tampilkan Pesan di UI (Snackbar)
             val resultMessage = when {
                 successCount > 0 && failCount == 0 -> "Berhasil mengimpor $successCount buku."
                 successCount > 0 && failCount > 0 -> "$successCount buku berhasil diimport, $failCount gagal/duplikat."
@@ -196,7 +182,6 @@ class LibraryViewModel(
         }
     }
 
-    // Refresh Library mandiri: Memeriksa apakah file fisik buku di internal storage masih ada
     fun refreshLibrary() {
         viewModelScope.launch(Dispatchers.IO) {
             _isScanning.value = true
@@ -216,13 +201,12 @@ class LibraryViewModel(
 
 class LibraryViewModelFactory(
     private val bookRepository: BookRepository,
-    private val themeRepository: ThemeRepository,
     private val context: Context
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LibraryViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return LibraryViewModel(bookRepository, themeRepository, context) as T
+            return LibraryViewModel(bookRepository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel Class")
     }

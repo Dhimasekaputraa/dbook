@@ -1,5 +1,8 @@
 package com.dhimsea.dbook.ui.library
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,26 +17,20 @@ import androidx.compose.material.icons.filled.Book as BookIcon
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import android.content.pm.PackageManager
-import androidx.compose.ui.platform.LocalContext
-import android.Manifest
-import android.os.Build
 import coil.compose.AsyncImage
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -41,25 +38,15 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Book) -> Unit
 ) {
-    
+    val context = LocalContext.current
     val books by viewModel.books.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
-    val isDarkMode by viewModel.isDarkMode.collectAsState()
-    val isDynamicColor by viewModel.isDynamicColor.collectAsState()
-
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-
-    val context = LocalContext.current
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted -> 
-    
-    }
+    ) { }
 
-    // Menggunakan OpenMultipleDocuments agar pengguna bisa memilih 1 atau banyak file sekaligus
     val multiFilePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -68,9 +55,7 @@ fun LibraryScreen(
         }
     }
 
-    // Listening ke event pesan UI untuk menampilkan Snackbar di bawah
     LaunchedEffect(Unit) {
-        // 1. Pengecekan izin notifikasi untuk Android 13+ (API level 33 / Tiramisu)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val hasPermission = ContextCompat.checkSelfPermission(
                 context,
@@ -82,119 +67,67 @@ fun LibraryScreen(
             }
         }
 
-        // 2. Listening event pesan uiMessage untuk Snackbar
         viewModel.uiMessage.collectLatest { message ->
             snackbarHostState.showSnackbar(message)
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = true,
-        drawerContent = {
-            ModalDrawerSheet {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "SETTINGS",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text("My Library") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.primary
                 )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Appearance Section
-                Text(
-                    text = "APPEARANCE",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                ListItem(
-                    headlineContent = { Text("Dark Mode") },
-                    trailingContent = {
-                        Switch(
-                            checked = isDarkMode,
-                            onCheckedChange = { viewModel.setDarkMode(it) }
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-                ListItem(
-                    headlineContent = { Text("Dynamic Color") },
-                    trailingContent = {
-                        Switch(
-                            checked = isDynamicColor,
-                            onCheckedChange = { viewModel.setDynamicColor(it) }
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Books")
             }
         }
-    ) {
-        Scaffold(
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            topBar = {
-                TopAppBar(
-                    title = { Text("My Library") },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu")
-                        }
-                    }
-                )
-            },
-            floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+    ) { paddingValues ->
+        PullToRefreshBox(
+            isRefreshing = isScanning,
+            onRefresh = { viewModel.refreshLibrary() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (books.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Books")
+                    Text(
+                        text = "Belum ada buku.\nTekan + untuk menambah buku.",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
-            }
-        ) { paddingValues ->
-            PullToRefreshBox(
-                isRefreshing = isScanning,
-                onRefresh = { viewModel.refreshLibrary() },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (books.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Belum ada buku.\nTekan + untuk menambah buku.",
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 120.dp),
+                    contentPadding = PaddingValues(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(books, key = { it.id }) { book ->
+                        BookCard(
+                            book = book,
+                            onClick = { onBookClick(book) },
+                            onDelete = { viewModel.deleteBook(book) },
+                            onAnnotations = { },
+                            onDetail = { }
                         )
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 120.dp),
-                        contentPadding = PaddingValues(16.dp),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(books, key = { it.id }) { book ->
-                            BookCard(
-                                book = book,
-                                onClick = { onBookClick(book) },
-                                onDelete = { viewModel.deleteBook(book) },
-                                onAnnotations = { },
-                                onDetail = { }
-                            )
-                        }
                     }
                 }
             }

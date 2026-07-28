@@ -52,19 +52,17 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun DbookTheme(
+    
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
+    
+    dynamicColor: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
-        // Dynamic color — Android 12+ only, fallback ke manual scheme di bawahnya
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context)
-            else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        dynamicColor && darkTheme -> dynamicDarkColorScheme(LocalContext.current)
+        dynamicColor && !darkTheme -> dynamicLightColorScheme(LocalContext.current)
+        darkTheme -> DarkColorScheme 
+        else -> LightColorScheme     
     }
 
     MaterialTheme(

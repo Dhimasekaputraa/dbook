@@ -3,11 +3,8 @@ package com.dhimsea.dbook
 import android.app.Application
 import androidx.room.Room
 import com.dhimsea.dbook.data.local.AppDatabase
-import com.dhimsea.dbook.data.local.datastore.ThemePreferences
 import com.dhimsea.dbook.data.repository.BookRepositoryImpl
-import com.dhimsea.dbook.data.repository.ThemeRepositoryImpl 
 import com.dhimsea.dbook.domain.repository.BookRepository
-import com.dhimsea.dbook.domain.repository.ThemeRepository
 
 class DbookApplication : Application() {
 //    instance database (lazy initialization)
@@ -22,9 +19,5 @@ class DbookApplication : Application() {
     }
     val bookRepository: BookRepository by lazy {
         BookRepositoryImpl(database.bookDao())
-    }
-
-     val themeRepository: ThemeRepository by lazy {
-        ThemeRepositoryImpl(ThemePreferences(applicationContext))
     }
 }
