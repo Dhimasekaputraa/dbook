@@ -14,6 +14,11 @@
             transition: background-color 0.3s;
         }
         #viewer { width: 100vw; height: 100vh; display: block; }
+
+        .no-scroll {
+            pointer-events: none !important;
+            touch-action: none !important;
+        }
     </style>
 </head>
 <body>
@@ -27,6 +32,7 @@
 
         var urlParams = new URLSearchParams(window.location.search);
         var initialCfi = urlParams.get('cfi');
+        var isOverviewActive = false;
 
         function setTheme(isDark) {
             var bg = isDark ? "#121212" : "#ffffff";
@@ -57,12 +63,7 @@
                     "margin-top": "1.2em !important",
                     "margin-bottom": "0.6em !important"
                 },
-                "li, a": { "color": text + " !important" },
-                "img, svg": { 
-                    "max-width": "100% !important", 
-                    "max-height": "80vh !important", 
-                    "object-fit": "contain !important" 
-                }
+                "li, a": { "color": text + " !important" }
             });
         }
 
@@ -74,7 +75,17 @@
             rendition.display();
         }
 
-        // 1. MANAJEMEN LOCATIONS & CHAPTER
+        // PERBAIKAN: Sinkronisasi Status Overview dari Android
+        function setOverviewState(active) {
+            isOverviewActive = active;
+            var viewer = document.getElementById("viewer");
+            if (active) {
+                viewer.classList.add("no-scroll");
+            } else {
+                viewer.classList.remove("no-scroll");
+            }
+        }
+
         book.ready.then(function() {
             return book.locations.generate(1600);
         }).then(function() {
@@ -131,8 +142,8 @@
             sendProgress(location);
         });
 
-        // 2. NAVIGASI AMAN
         function safeNext() {
+            if (isOverviewActive) return;
             var loc = rendition.currentLocation();
             rendition.next().then(function() {
                 var newLoc = rendition.currentLocation();
@@ -149,66 +160,45 @@
         }
 
         function safePrev() {
+            if (isOverviewActive) return;
             var loc = rendition.currentLocation();
-            if (!loc || !loc.start) {
-                return;
-            }
+            if (!loc || !loc.start) return;
 
             var currentIndex = loc.start.index;
+            if (currentIndex === 0 && loc.atStart) return;
 
-            // Jika di indeks mutlak 0 dan di awal halaman, hentikan
-            if (currentIndex === 0 && loc.atStart) {
-                return;
-            }
-
-            // Coba mundur di dalam file spine saat ini
             rendition.prev().then(function() {
                 var newLoc = rendition.currentLocation();
-                // Jika lokasi tidak berubah (artinya sudah di batas awal file/spine tersebut)
                 if (newLoc && newLoc.start.cfi === loc.start.cfi) {
                     if (currentIndex > 0) {
                         var prevSpine = book.spine.get(currentIndex - 1);
                         if (prevSpine) {
                             var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
                             var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
-
-                            // Cegah lompat ke file gambar mentah, sprite, atau cover viewer non-teks
                             var isRawImageOrSprite = mediaType.startsWith("image/") ||
                                                      prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
                                                      prevHref.includes("cvi") ||
                                                      prevHref.includes("adc");
 
-                            if (isRawImageOrSprite) {
-                                return; // Blokir agar tidak fallback ke sprite/gambar mentah
+                            if (!isRawImageOrSprite) {
+                                rendition.display(prevSpine.href);
                             }
-
-                            rendition.display(prevSpine.href);
                         }
                     }
                 }
-            }).catch(function(err) {
+            }).catch(function() {
                 if (currentIndex > 0) {
                     var prevSpine = book.spine.get(currentIndex - 1);
-                    if (prevSpine) {
-                        var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
-                        var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
-                        var isRawImageOrSprite = mediaType.startsWith("image/") ||
-                                                 prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
-                                                 prevHref.includes("cvi") ||
-                                                 prevHref.includes("adc");
-                        if (!isRawImageOrSprite) {
-                            rendition.display(prevSpine.href);
-                        }
-                    }
+                    if (prevSpine) rendition.display(prevSpine.href);
                 }
             });
         }
 
-        // 3. LOGIKA DETEKSI TAP & SWIPE
+        // --- MANAJEMEN GESTURE PINCH SATU ARAH ---
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
         var initialDistance = 0, isPinching = false;
-        var pinchThreshold = 50, swipeThreshold = 40;
+        var pinchThreshold = 35, swipeThreshold = 40;
 
         function getDistance(touches) {
             var dx = touches[0].clientX - touches[1].clientX;
@@ -233,9 +223,23 @@
             doc.addEventListener("touchmove", function(e) {
                 if (isPinching && e.touches.length === 2 && initialDistance > 0) {
                     var currentDistance = getDistance(e.touches);
-                    if (initialDistance - currentDistance > pinchThreshold) {
-                        if (window.Android) window.Android.toggleOverview();
+                    var deltaDistance = currentDistance - initialDistance;
+
+                    // PINCH IN (Dua jari mendekat) -> HANYA DIPROSES JIKA SAAT INI FULLSCREEN
+                    if (deltaDistance < -pinchThreshold) {
+                        if (!isOverviewActive) {
+                            isOverviewActive = true; // Kunci status secara instant
+                            if (window.Android) window.Android.openOverview();
+                        }
                         initialDistance = 0; 
+                    } 
+                    // PINCH OUT / ZOOM OUT (Dua jari menjauh) -> HANYA DIPROSES JIKA SAAT INI OVERVIEW
+                    else if (deltaDistance > pinchThreshold) {
+                        if (isOverviewActive) {
+                            isOverviewActive = false; // Kunci status secara instant
+                            if (window.Android) window.Android.closeOverview();
+                        }
+                        initialDistance = 0;
                     }
                 }
             }, {passive: false});
@@ -259,9 +263,13 @@
             var screenWidth = window.screen.width || window.innerWidth;
 
             if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
-                if (touchEndX < screenWidth * 0.35) {
+                if (touchEndX >= screenWidth * 0.35 && touchEndX <= screenWidth * 0.65) {
+                    if (window.Android) window.Android.toggleOverview();
+                } 
+                else if (touchEndX < screenWidth * 0.35) {
                     safePrev();
-                } else if (touchEndX > screenWidth * 0.65) {
+                } 
+                else if (touchEndX > screenWidth * 0.65) {
                     safeNext();
                 }
             } 

@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -36,7 +38,10 @@ class MainActivity : ComponentActivity() {
             DbookTheme {
                 val navController = rememberNavController()
 
-                NavHost(navController = navController, startDestination = Screen.Library.route) {
+                NavHost(
+                    navController = navController, 
+                    startDestination = Screen.Library.route
+                ) {
                     composable(Screen.Library.route) {
                         LibraryScreen(
                             viewModel = libraryViewModel,
@@ -47,7 +52,27 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    composable(Screen.Reader.route) { backStackEntry ->
+                    composable(
+                        route = Screen.Reader.route,
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        }
+                    ) { backStackEntry ->
                         val encodedPath = backStackEntry.arguments?.getString("filePath") ?: ""
                         val decodedPath = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8.toString())
 
