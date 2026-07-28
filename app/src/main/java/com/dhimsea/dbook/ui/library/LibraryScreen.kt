@@ -25,6 +25,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.os.Build
 import coil.compose.AsyncImage
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.collectLatest
@@ -36,6 +41,7 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Book) -> Unit
 ) {
+    
     val books by viewModel.books.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
@@ -44,6 +50,14 @@ fun LibraryScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val context = LocalContext.current
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted -> 
+    
+    }
 
     // Menggunakan OpenMultipleDocuments agar pengguna bisa memilih 1 atau banyak file sekaligus
     val multiFilePickerLauncher = rememberLauncherForActivityResult(
@@ -56,6 +70,19 @@ fun LibraryScreen(
 
     // Listening ke event pesan UI untuk menampilkan Snackbar di bawah
     LaunchedEffect(Unit) {
+        // 1. Pengecekan izin notifikasi untuk Android 13+ (API level 33 / Tiramisu)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasPermission) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        // 2. Listening event pesan uiMessage untuk Snackbar
         viewModel.uiMessage.collectLatest { message ->
             snackbarHostState.showSnackbar(message)
         }

@@ -94,6 +94,13 @@ class LibraryViewModel(
             var failCount = 0
             val total = uris.size
 
+            val canShowNotification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == 
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
             val notifBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle("Mengimpor Buku")
@@ -111,12 +118,18 @@ class LibraryViewModel(
             }
 
             // Update Notification saat Selesai
-            notifBuilder.setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("Import Selesai")
-                .setContentText("Berhasil: $successCount, Gagal: $failCount")
-                .setProgress(0, 0, false)
-                .setOngoing(false)
-            notificationManager.notify(NOTIF_ID, notifBuilder.build())
+            if (canShowNotification){
+                notifBuilder.setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle("Import Selesai")
+                    .setContentText("Berhasil: $successCount, Gagal: $failCount")
+                    .setProgress(0, 0, false)
+                    .setOngoing(false)
+                try {
+                    notificationManager.notify(NOTIF_ID, notifBuilder.build())
+                } catch (e: SecurityException) {
+                    e.printStackTrace()
+                }   
+            }
 
             _isScanning.value = false
 
