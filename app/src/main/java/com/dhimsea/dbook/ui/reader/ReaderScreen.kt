@@ -49,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.border
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -590,17 +591,40 @@ fun ReaderScreen(
                     )
 
                     Column {
-                        Text("Pilih Warna Highlight:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "Pilih Warna Highlight:", 
+                            style = MaterialTheme.typography.labelSmall, 
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween, // Disesuaikan agar spacing presisi seperti di Popup
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             presetColors.forEach { (hex, color) ->
+                                val isSelected = selectedColorHex == hex
+                                
                                 Box(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clip(CircleShape)
                                         .background(color)
-                                        .clickable { selectedColorHex = hex }
-                                        .then(if (selectedColorHex == hex) Modifier.shadow(6.dp, CircleShape) else Modifier)
+                                        // Indikator warna terpilih berupa outline/border ramping tanpa efek shadow yang bikin kedip
+                                        .then(
+                                            if (isSelected) {
+                                                Modifier.border(
+                                                    width = 3.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    shape = CircleShape
+                                                )
+                                            } else Modifier
+                                        )
+                                        .clickable { 
+                                            // Hanya mengubah state lokal warna, TIDAK memanggil saveAnnotation() langsung
+                                            selectedColorHex = hex 
+                                        }
                                 )
                             }
                         }
