@@ -396,7 +396,8 @@ fun ReaderScreen(
 
                             val targetCfi = initialCfiToJump ?: currentBook?.lastReadCfi
                             val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
-                            loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi")
+                            val bookIdParam = currentBook?.id ?: 0L
+                            loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi&bookId=$bookIdParam")
                             webViewRef = this
                         }
                     }

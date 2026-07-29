@@ -34,7 +34,44 @@
 
         var urlParams = new URLSearchParams(window.location.search);
         var initialCfi = urlParams.get('cfi');
+        var bookIdParam = urlParams.get('bookId') || 'unknown';
+        var currentFontSize = 18
         var isOverviewActive = false;
+
+        function getLocationsCacheKey() {
+            return "epub_location_" + bookIdParam + "_fs" + currentFontSize
+        }
+
+        function loadOrGenerateLocations() {
+            var cacheKey = getLocationsCacheKey();
+            var cached = null;
+
+            try {
+                cached = localStorage.getItem(cacheKey);
+            } catch (e) {
+                console.log("Local Storage error:", e)
+            }
+
+            if (cached) {
+                try {
+                    book.locations.load(cached);
+                    console.log("Locations loaded from cache, Total:", book.locations.total);
+                    return Promise.resolve();
+                } catch (e) {
+                    console.log("Failed to load cached locations, regenerating:", e);
+                }
+            }
+
+            return book.locations.generate(1600).then(function(){
+                try {
+                    var generated = book.locations.save();
+                    localStorage.setItem(cacheKey, generated);
+                    console.log("Locations generated and cached. Total:", book.locations.total);
+                } catch (e) {
+                    console.log("Failed to save locations to cache:", e);
+                }
+            });
+        }
 
         function setTheme(isDark) {
             var bg = isDark ? "#121212" : "#ffffff";
@@ -71,12 +108,6 @@
 
         setTheme(false);
 
-        if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
-            rendition.display(initialCfi);
-        } else {
-            rendition.display();
-        }
-
         // PERBAIKAN: Sinkronisasi Status Overview dari Android
         function setOverviewState(active) {
             isOverviewActive = active;
@@ -89,37 +120,49 @@
         }
 
         book.ready.then(function() {
-            return book.locations.generate(1600);
+            return loadOrGenerateLocations();
         }).then(function() {
             var chapterList = [];
             
-            function parseNavItems(items) {
-                if (!items) return;
-                items.forEach(function(item) {
-                    var cfi = book.locations.cfiFromHref(item.href);
-                    if (cfi) {
-                        var pct = book.locations.percentageFromCfi(cfi);
-                        chapterList.push({ label: item.label.trim(), percent: pct });
-                    }
-                    if (item.subitems && item.subitems.length > 0) {
-                        parseNavItems(item.subitems);
-                    }
-                });
-            }
+            try {
+                function parseNavItems(items) {
+                    if (!items) return;
+                    items.forEach(function(item) {
+                        var cfi = book.locations.cfiFromHref(item.href);
+                        if (cfi) {
+                            var pct = book.locations.percentageFromCfi(cfi);
+                            chapterList.push({ label: item.label.trim(), percent: pct });
+                        }
+                        if (item.subitems && item.subitems.length > 0) {
+                            parseNavItems(item.subitems);
+                        }
+                    });
+                }
 
-            if (book.navigation && book.navigation.toc) {
-                parseNavItems(book.navigation.toc);
+                if (book.navigation && book.navigation.toc) {
+                    parseNavItems(book.navigation.toc);
+                }
+            } catch (err) {
+                console.log("Chapter parsing error (non-fatal:)", err);
             }
 
             if (window.Android) {
                 window.Android.onChaptersLoaded(JSON.stringify(chapterList));
             }
 
-            var curLoc = rendition.currentLocation();
-            if (curLoc) {
-                sendProgress(curLoc);
+            if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
+                rendition.display(initialCfi);
+            } else {
+                rendition.display();
             }
-        });
+        }).catch(function(err) {
+            console.log("Book ready chain error:", err);
+            if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
+                rendition.display(initialCfi);
+            } else {
+                rendition.display();
+            }
+        })
 
         function sendProgress(location) {
             if (window.Android && location && location.start) {
