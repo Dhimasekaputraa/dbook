@@ -37,7 +37,8 @@ import kotlinx.coroutines.flow.collectLatest
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Book) -> Unit,
-    onAnnotationClick: (Book) -> Unit
+    onAnnotationClick: (Book) -> Unit,
+    onBookDetailClick: (Book) -> Unit
 ) {
     val context = LocalContext.current
     val books by viewModel.books.collectAsState()
@@ -127,7 +128,7 @@ fun LibraryScreen(
                             onClick = { onBookClick(book) },
                             onDelete = { viewModel.deleteBook(book) },
                             onAnnotations = { onAnnotationClick(book) },
-                            onDetail = { }
+                            onDetail = { onBookDetailClick(book) }
                         )
                     }
                 }

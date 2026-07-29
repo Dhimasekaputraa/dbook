@@ -18,6 +18,9 @@ import com.dhimsea.dbook.core.designsystem.DbookTheme
 import com.dhimsea.dbook.ui.annotation.AnnotationScreen
 import com.dhimsea.dbook.ui.annotation.AnnotationViewModel
 import com.dhimsea.dbook.ui.annotation.AnnotationViewModelFactory
+import com.dhimsea.dbook.ui.bookdetail.BookDetailScreen
+import com.dhimsea.dbook.ui.bookdetail.BookDetailViewModel
+import com.dhimsea.dbook.ui.bookdetail.BookDetailViewModelFactory
 import com.dhimsea.dbook.ui.library.LibraryScreen
 import com.dhimsea.dbook.ui.library.LibraryViewModel
 import com.dhimsea.dbook.ui.library.LibraryViewModelFactory
@@ -65,6 +68,9 @@ class MainActivity : ComponentActivity() {
                                 val encodedTitle = URLEncoder.encode(book.title, StandardCharsets.UTF_8.toString())
                                 val encodedPath = URLEncoder.encode(book.filePath, StandardCharsets.UTF_8.toString())
                                 navController.navigate("annotation/${book.id}/$encodedTitle/$encodedPath")
+                            },
+                            onBookDetailClick = { book ->
+                                navController.navigate("book_detail/${book.id}")
                             }
                         )
                     }
@@ -135,6 +141,27 @@ class MainActivity : ComponentActivity() {
                             },
                             onDeleteAnnotation = { annotation ->
                                 annotationViewModel.deleteAnnotation(annotation)
+                            },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    // --- BOOK DETAIL SCREEN ---
+                    composable(
+                        route = "book_detail/{bookId}",
+                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                    ) { backStackEntry ->
+                        val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
+                        
+                        // DI SINI PERBAIKANNYA: Menggunakan app.bookRepository
+                        val factory = BookDetailViewModelFactory(app.bookRepository, bookId)
+                        val viewModel: BookDetailViewModel = viewModel(factory = factory)
+
+                        BookDetailScreen(
+                            viewModel = viewModel,
+                            onReadClick = { filePath ->
+                                val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
+                                navController.navigate(Screen.Reader.createRoute(encodedPath))
                             },
                             onBack = { navController.popBackStack() }
                         )
