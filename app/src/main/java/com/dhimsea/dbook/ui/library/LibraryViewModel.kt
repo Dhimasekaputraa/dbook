@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class LibraryViewModel(
     private val bookRepository: BookRepository,
@@ -194,6 +195,9 @@ class LibraryViewModel(
                         bookRepository.deleteBookByFilePath(path)
                     }
                 }
+                delay(600)
+            } catch (e: Exception) {
+                e.printStackTrace()
             } finally {
                 _isScanning.value = false
             }
