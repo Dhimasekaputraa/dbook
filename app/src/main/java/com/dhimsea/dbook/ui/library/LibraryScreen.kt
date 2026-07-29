@@ -45,6 +45,8 @@ fun LibraryScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var bookToDelete by remember { mutableStateOf<Book?>(null) }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { }
@@ -126,7 +128,7 @@ fun LibraryScreen(
                         BookCard(
                             book = book,
                             onClick = { onBookClick(book) },
-                            onDelete = { viewModel.deleteBook(book) },
+                            onDelete = { bookToDelete = (book) },
                             onAnnotations = { onAnnotationClick(book) },
                             onDetail = { onBookDetailClick(book) }
                         )
@@ -134,6 +136,33 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+    bookToDelete?.let { book ->
+        AlertDialog(
+            onDismissRequest = { bookToDelete = null },
+            title = { Text("Hapus Buku") },
+            text = { 
+                Text("Apakah kamu yakin ingin menghapus \"${book.title}\"? Data buku akan dihapus secara permanen.") 
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteBook(book)
+                        bookToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Hapus")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToDelete = null }) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 }
 

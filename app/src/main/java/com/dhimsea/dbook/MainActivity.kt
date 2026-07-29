@@ -116,7 +116,31 @@ class MainActivity : ComponentActivity() {
                             navArgument("bookId") { type = NavType.LongType },
                             navArgument("bookTitle") { type = NavType.StringType },
                             navArgument("filePath") { type = NavType.StringType }
-                        )
+                        ),
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        }
                     ) { backStackEntry ->
                         val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
                         val rawTitle = backStackEntry.arguments?.getString("bookTitle") ?: "Buku"
@@ -149,7 +173,31 @@ class MainActivity : ComponentActivity() {
                     // --- BOOK DETAIL SCREEN ---
                     composable(
                         route = "book_detail/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                        arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        }
                     ) { backStackEntry ->
                         val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
                         
