@@ -116,14 +116,22 @@ class MainActivity : ComponentActivity() {
                         val rawTitle = backStackEntry.arguments?.getString("bookTitle") ?: "Buku"
                         val bookTitle = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
 
+                        val rawFilePath = backStackEntry.arguments?.getString("filePath") ?: ""
+                        val decodedFilePath = URLDecoder.decode(rawFilePath, StandardCharsets.UTF_8.toString())
+
                         val annotations by annotationViewModel.getAnnotationsForBook(bookId).collectAsState(initial = emptyList())
 
                         AnnotationScreen(
                             bookTitle = bookTitle,
                             annotations = annotations,
                             onAnnotationClick = { annotation ->
-                                navController.previousBackStackEntry?.savedStateHandle?.set("targetCfi", annotation.cfi)
-                                navController.popBackStack()
+                                val encodedPath = URLEncoder.encode(decodedFilePath, StandardCharsets.UTF_8.toString())
+                                navController.navigate(Screen.Reader.createRoute(encodedPath)) {
+                                    popUpTo(Screen.Library.route)
+                                }
+                                navController.currentBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("targetCfi", annotation.cfi)
                             },
                             onDeleteAnnotation = { annotation ->
                                 annotationViewModel.deleteAnnotation(annotation)
