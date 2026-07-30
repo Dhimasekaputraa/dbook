@@ -53,7 +53,6 @@
                     console.log("Local Storage error:", e);
                 }
 
-                // 1. MEMUAT DARI CACHE (JIKA SUDAH PERNAH DI-INDEX)
                 if (cached) {
                     try {
                         book.locations.load(cached);
@@ -67,11 +66,9 @@
                     }
                 }
 
-                // 2. BUKU PERTAMA KALI DIBUKA: GENERATE LOCATIONS SAFE
                 var totalSpineItems = (book.spine && book.spine.spineItems) ? book.spine.spineItems.length : 1;
                 var processedItems = 0;
 
-                // Interceptor progress aman
                 var originalProcess = book.locations.process ? book.locations.process.bind(book.locations) : null;
                 if (originalProcess) {
                     book.locations.process = function(section) {
@@ -92,7 +89,6 @@
                     try { window.Android.onIndexingProgress(0); } catch(e) {}
                 }
 
-                // Jalankan generate lokasi dengan batas karakter (1600)
                 book.locations.generate(1600).then(function() {
                     if (originalProcess) book.locations.process = originalProcess;
 
@@ -114,7 +110,7 @@
                     if (window.Android && window.Android.onIndexingProgress) {
                         try { window.Android.onIndexingProgress(100); } catch(e) {}
                     }
-                    resolve(); // Tetap resolve agar tidak stuck/loading selamanya
+                    resolve();
                 });
             });
         }
@@ -134,7 +130,8 @@
                     "padding-right": "24px !important",
                     "margin": "0 !important",
                     "max-width": "100% !important",
-                    "box-sizing": "border-box !important"
+                    "box-sizing": "border-box !important",
+                    "overflow": "hidden !important"
                 },
                 "p, div, span": { 
                     "color": text + " !important",
@@ -195,7 +192,6 @@
                 try { window.Android.onChaptersLoaded(JSON.stringify(chapterList)); } catch(e) {}
             }
 
-            // TAMPILKAN HALAMAN TERAKHIR DENGAN CFI RESMI
             console.log("[READER_LOG] initialCfi dari URL:", initialCfi);
             if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
                 console.log("[READER_LOG] Displaying target CFI:", initialCfi);
@@ -508,20 +504,23 @@
 
             isNavigatingToSearch = true;
 
-            // 1. Pindah ke halaman target
             rendition.display(cfi).then(function() {
-                // 2. Berikan jeda agar IFrame halaman selesai memuat penuh
                 setTimeout(function() {
-                    // Coba highlight via CFI standar epub.js dulu
+                    resetIframeScroll();
+
+                    // 1. Bersihkan highlight lama
+                    clearSearchHighlight();
+
+                    // 2. Coba highlight via API Bawaan ePub.js
                     applySearchHighlight(cfi);
 
-                    // Jika ada searchText, jalankan fallback penandaan langsung di DOM IFrame
+                    // 3. Coba highlight spesifik paragraf CFI lewat DOM
                     if (searchText) {
-                        highlightTextInIframe(searchText);
+                        highlightSpecificCfiText(cfi, searchText);
                     }
 
                     isNavigatingToSearch = false;
-                }, 250); // Jeda 250ms memastikan IFrame siap
+                }, 300);
             }).catch(function(err) {
                 console.error("Error displaying search CFI:", err);
                 isNavigatingToSearch = false;
@@ -543,40 +542,109 @@
             }
         }
 
-        // Fallback: Highlight langsung ke teks di DOM IFrame (100% akurat & terlihat)
-        function highlightTextInIframe(searchText) {
+        function resetIframeScroll() {
+            try {
+                var iframe = document.querySelector("#viewer iframe");
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.scrollTo(0, 0);
+                    if (iframe.contentDocument && iframe.contentDocument.documentElement) {
+                        iframe.contentDocument.documentElement.scrollLeft = 0;
+                        iframe.contentDocument.body.scrollLeft = 0;
+                    }
+                }
+                rendition.resize();
+            } catch(e) {}
+        }
+
+        function highlightSpecificCfiText(cfi, searchText) {
             try {
                 var iframe = document.querySelector("#viewer iframe");
                 if (!iframe || !iframe.contentDocument) return;
 
                 var doc = iframe.contentDocument;
-                var win = iframe.contentWindow;
 
-                // Bersihkan highlight DOM lama jika ada
-                clearDomHighlights(doc);
+                var targetElement = null;
+                try {
+                    var range = rendition.getRange(cfi);
+                    if (range && range.startContainer) {
+                        targetElement = range.startContainer.nodeType === Node.TEXT_NODE 
+                            ? range.startContainer.parentNode 
+                            : range.startContainer;
+                    }
+                } catch(err) {
+                    console.log("getRange failed, fallback to body search:", err);
+                }
 
-                // Gunakan window.find jika didukung browser/webview
-                if (win && win.find) {
-                    win.getSelection().removeAllRanges();
-                    if (win.find(searchText, false, false, true, false, false, false)) {
-                        var sel = win.getSelection();
-                        if (sel.rangeCount > 0) {
-                            var range = sel.getRangeAt(0);
-                            var span = doc.createElement("mark");
-                            span.className = "search-dom-highlight";
-                            span.style.backgroundColor = "#FFEB3B";
-                            span.style.color = "#000000";
-                            span.style.borderRadius = "2px";
-                            span.style.padding = "2px 0";
-                            
-                            range.surroundContents(span);
-                            win.getSelection().removeAllRanges(); // Hilangkan seleksi biru
-                        }
+                if (!targetElement) {
+                    targetElement = doc.body;
+                }
+
+                if (!searchText || searchText.trim().length === 0) return;
+
+                var cleanQuery = searchText.trim();
+                var regex = new RegExp("(" + escapeRegExp(cleanQuery) + ")", "gi");
+
+                var walker = doc.createTreeWalker(targetElement, NodeFilter.SHOW_TEXT, null, false);
+                var nodesToReplace = [];
+
+                while (walker.nextNode()) {
+                    var node = walker.currentNode;
+                    if (node.parentNode && 
+                        node.parentNode.nodeName !== "SCRIPT" && 
+                        node.parentNode.nodeName !== "STYLE" &&
+                        node.parentNode.nodeName !== "MARK" &&
+                        node.nodeValue.match(regex)) {
+                        nodesToReplace.push(node);
                     }
                 }
+
+                // Hanya bungkus match PERTAMA di dalam node target CFI tersebut
+                if (nodesToReplace.length > 0) {
+                    var node = nodesToReplace[0];
+                    var parent = node.parentNode;
+                    var val = node.nodeValue;
+                    var fragment = doc.createDocumentFragment();
+                    var lastIndex = 0;
+
+                    var matchFound = false;
+                    val.replace(regex, function(match, p1, offset) {
+                        if (matchFound) return; // Hanya highlight instance pertama
+
+                        if (offset > lastIndex) {
+                            fragment.appendChild(doc.createTextNode(val.substring(lastIndex, offset)));
+                        }
+
+                        var mark = doc.createElement("mark");
+                        mark.className = "search-dom-highlight";
+                        mark.style.backgroundColor = "#FFEB3B";
+                        mark.style.color = "#000000";
+                        mark.style.borderRadius = "2px";
+                        mark.style.padding = "2px 0";
+                        mark.appendChild(doc.createTextNode(match));
+                        fragment.appendChild(mark);
+
+                        lastIndex = offset + match.length;
+                        matchFound = true;
+                    });
+
+                    if (lastIndex < val.length) {
+                        fragment.appendChild(doc.createTextNode(val.substring(lastIndex)));
+                    }
+
+                    if (matchFound) {
+                        parent.replaceChild(fragment, node);
+                    }
+                }
+
+                resetIframeScroll();
+
             } catch (e) {
-                console.log("DOM highlight fallback info:", e);
+                console.error("DOM specific highlight error:", e);
             }
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
         function clearDomHighlights(doc) {
@@ -591,6 +659,7 @@
                         var parent = m.parentNode;
                         while (m.firstChild) parent.insertBefore(m.firstChild, m);
                         parent.removeChild(m);
+                        if (parent) parent.normalize();
                     });
                 }
             } catch(e) {}
@@ -607,9 +676,9 @@
             clearDomHighlights();
         }
 
-        // OTOMATIS HAPUS HIGHLIGHT SAAT NAVIGASI MANUAL / BERPINDAH HALAMAN
         rendition.on("relocated", function(location) {
             sendProgress(location);
+            resetIframeScroll();
             
             if (!isNavigatingToSearch) {
                 clearSearchHighlight();
