@@ -5,28 +5,21 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.repository.BookRepository
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.stateIn
 
 class BookDetailViewModel(
     private val bookRepository: BookRepository,
     private val bookId: Long
 ) : ViewModel() {
 
-    private val _book = MutableStateFlow<Book?>(null)
-    val book: StateFlow<Book?> = _book.asStateFlow()
-
-    init {
-        loadBookDetail()
-    }
-
-    private fun loadBookDetail() {
-        viewModelScope.launch {
-            _book.value = bookRepository.getBookById(bookId)
-        }
-    }
+    val book: StateFlow<Book?> = bookRepository.observeBookById(bookId)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000), // Tetap aktif selama UI terbuka
+            initialValue = null
+        )
 }
 
 class BookDetailViewModelFactory(

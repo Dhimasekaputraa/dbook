@@ -3,6 +3,8 @@ package com.dhimsea.dbook.ui.reader
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ActionMode
 import android.view.Menu
@@ -21,6 +23,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -29,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.*
@@ -42,6 +46,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -49,7 +54,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
-import androidx.compose.foundation.border
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -79,50 +83,61 @@ class ReaderBridge(
     private val onCloseOverview: () -> Unit,
     private val onChaptersLoaded: (List<ChapterMarker>) -> Unit,
     private val onTextSelected: (String, String, Float, Float) -> Unit,
-    private val onSelectionCleared: () -> Unit
+    private val onSelectionCleared: () -> Unit,
+    private val onIndexingProgressUpdate: (Int) -> Unit
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @JavascriptInterface
     fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String, cfi: String) {
-        onProgressUpdate(currentPage, totalPages, percent, chapterName, cfi)
+        mainHandler.post { onProgressUpdate(currentPage, totalPages, percent, chapterName, cfi) }
     }
 
     @JavascriptInterface
-    fun toggleOverview() { onToggleOverview() }
+    fun toggleOverview() { mainHandler.post { onToggleOverview() } }
 
     @JavascriptInterface
-    fun openOverview() { onOpenOverview() }
+    fun openOverview() { mainHandler.post { onOpenOverview() } }
 
     @JavascriptInterface
-    fun closeOverview() { onCloseOverview() }
+    fun closeOverview() { mainHandler.post { onCloseOverview() } }
 
     @JavascriptInterface
     fun onChaptersLoaded(jsonString: String) {
-        try {
-            val array = JSONArray(jsonString)
-            val list = mutableListOf<ChapterMarker>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                list.add(
-                    ChapterMarker(
-                        label = obj.getString("label"),
-                        percent = obj.getDouble("percent").toFloat()
+        mainHandler.post {
+            try {
+                val array = JSONArray(jsonString)
+                val list = mutableListOf<ChapterMarker>()
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    list.add(
+                        ChapterMarker(
+                            label = obj.getString("label"),
+                            percent = obj.getDouble("percent").toFloat()
+                        )
                     )
-                )
+                }
+                onChaptersLoaded(list)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            onChaptersLoaded(list)
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
     @JavascriptInterface
     fun onTextSelectedWithPosition(cfi: String, text: String, posX: Float, posY: Float) {
-        onTextSelected(cfi, text, posX, posY)
+        mainHandler.post { onTextSelected(cfi, text, posX, posY) }
     }
 
     @JavascriptInterface
     fun onSelectionCleared() {
-        onSelectionCleared()
+        mainHandler.post { onSelectionCleared() }
+    }
+
+    // Dipanggil dari reader.html selama proses locations.generate() berjalan
+    @JavascriptInterface
+    fun onIndexingProgress(percent: Int) {
+        mainHandler.post { onIndexingProgressUpdate(percent) }
     }
 }
 
@@ -152,6 +167,12 @@ fun ReaderScreen(
     var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
     var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
+    // State progres indexing buku (proses locations.generate())
+    var indexingProgress by remember { mutableIntStateOf(0) }
+    var isIndexing by remember { mutableStateOf(true) }
+
+    var latestCfi by remember { mutableStateOf<String?>(null) }
+
     // State Seleksi Teks & Dialog Note
     var pendingSelection by remember { mutableStateOf<PendingSelection?>(null) }
     var showNoteDialog by remember { mutableStateOf(false) }
@@ -166,7 +187,7 @@ fun ReaderScreen(
     LaunchedEffect(isOverviewMode) {
         val window = (context as? Activity)?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-        
+
         if (isOverviewMode) {
             insetsController.show(WindowInsetsCompat.Type.systemBars())
             webViewRef?.evaluateJavascript("setOverviewState(true);", null)
@@ -211,6 +232,19 @@ fun ReaderScreen(
             val window = (context as? Activity)?.window
             if (window != null) {
                 WindowCompat.getInsetsController(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            }
+
+            // PERBAIKAN: Perbarui Waktu Terakhir Dibaca saat keluar dari Reader
+            currentBook?.let { book ->
+                val cfiToSave = latestCfi ?: book.lastReadCfi
+                scope.launch(Dispatchers.IO) {
+                    bookRepository.updateReadingProgress(
+                        bookId = book.id,
+                        page = currentPage,
+                        cfi = cfiToSave,
+                        progress = currentPercent
+                    )
+                }
             }
         }
     }
@@ -291,24 +325,18 @@ fun ReaderScreen(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                        // OVERRIDE ACTION MODE TAPI TETAP KEMBALIKAN TRUE
                         object : WebView(ctx) {
                             private val emptyActionModeCallback = object : ActionMode.Callback {
                                 override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
-                                    // Bersihkan menu Copy/Share bawaan Android secara paksa
                                     menu?.clear()
-                                    // KEMBALIKAN TRUE: Android akan tetap menandai blok teks (kursor biru),
-                                    // dan tidak merusak gesture sistem!
-                                    return true 
+                                    return true
                                 }
                                 override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
                                     menu?.clear()
                                     return true
                                 }
                                 override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) = false
-                                override fun onDestroyActionMode(mode: ActionMode?) {
-                                    // Sinyal bahwa teks di-unselect (misal tap layar sembarangan)
-                                }
+                                override fun onDestroyActionMode(mode: ActionMode?) {}
                             }
 
                             override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
@@ -346,6 +374,7 @@ fun ReaderScreen(
                                     totalPages = total
                                     currentPercent = percent
                                     currentChapter = chapter
+                                    latestCfi = cfi
 
                                     currentBook?.let { book ->
                                         scope.launch(Dispatchers.IO) {
@@ -358,12 +387,16 @@ fun ReaderScreen(
                                 onCloseOverview = { isOverviewMode = false },
                                 onChaptersLoaded = { chapterList -> chapters = chapterList },
                                 onTextSelected = { cfi, text, posX, posY ->
-                                    // Teks diblok -> Tampilkan Popup Custom
                                     pendingSelection = PendingSelection(cfi, text, posX, posY)
                                 },
                                 onSelectionCleared = {
-                                    // Klik di tempat lain -> Hapus Popup Custom
                                     pendingSelection = null
+                                },
+                                onIndexingProgressUpdate = { percent ->
+                                    indexingProgress = percent
+                                    if (percent >= 100) {
+                                        isIndexing = false
+                                    }
                                 }
                             ), "Android")
 
@@ -371,8 +404,7 @@ fun ReaderScreen(
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
                                     view?.evaluateJavascript("setTheme($isDarkMode);", null)
-                                    
-                                    // Load Anotasi yang sudah disimpan sebelumnya
+
                                     currentBook?.id?.let { bookId ->
                                         scope.launch(Dispatchers.IO) {
                                             bookRepository.getAnnotationsForBook(bookId).collect { annotations ->
@@ -417,20 +449,31 @@ fun ReaderScreen(
                 )
             }
 
-            if (isLoading) {
-                CircularProgressIndicator()
+            // FULL-SCREEN LOADING OVERLAY — menutup WebView sampai buku siap di-index/dimuat
+            AnimatedVisibility(
+                visible = isLoading || isIndexing,
+                exit = fadeOut(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(20f)
+            ) {
+                IndexingLoadingScreen(
+                    bookTitle = currentBook?.title ?: "",
+                    isIndexing = isIndexing,
+                    progress = indexingProgress,
+                    backgroundColor = outerBackgroundColor
+                )
             }
         }
 
-        // --- POPUP MENU CUSTOM (MUNCUL DI LOKASI KLIK/PILIH SEPERTI DI LIBRARY) ---
+        // --- POPUP MENU CUSTOM ---
         if (pendingSelection != null && !showNoteDialog) {
             val pxX = (pendingSelection!!.posX * density).toInt()
             val pxY = (pendingSelection!!.posY * density).toInt()
 
             Popup(
                 alignment = Alignment.TopStart,
-                // Kita posisikan sedikit di atas/bawah area sentuh agar tidak tertutup jari
-                offset = IntOffset(x = (pxX - (100 * density)).toInt(), y = (pxY + (10 * density)).toInt()), 
+                offset = IntOffset(x = (pxX - (100 * density)).toInt(), y = (pxY + (10 * density)).toInt()),
                 onDismissRequest = {
                     pendingSelection = null
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
@@ -447,7 +490,6 @@ fun ReaderScreen(
                             .width(220.dp)
                             .padding(vertical = 8.dp)
                     ) {
-                        // BARIS 1: BULATAN WARNA UNTUK HIGHLIGHT LANGSUNG
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -465,10 +507,9 @@ fun ReaderScreen(
                                 )
                             }
                         }
-                        
+
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        
-                        // BARIS 2: MENU ADD NOTE SEPERTI LIBRARY SCREEN
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -593,26 +634,25 @@ fun ReaderScreen(
 
                     Column {
                         Text(
-                            text = "Pilih Warna Highlight:", 
-                            style = MaterialTheme.typography.labelSmall, 
+                            text = "Pilih Warna Highlight:",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween, // Disesuaikan agar spacing presisi seperti di Popup
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             presetColors.forEach { (hex, color) ->
                                 val isSelected = selectedColorHex == hex
-                                
+
                                 Box(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clip(CircleShape)
                                         .background(color)
-                                        // Indikator warna terpilih berupa outline/border ramping tanpa efek shadow yang bikin kedip
                                         .then(
                                             if (isSelected) {
                                                 Modifier.border(
@@ -622,9 +662,8 @@ fun ReaderScreen(
                                                 )
                                             } else Modifier
                                         )
-                                        .clickable { 
-                                            // Hanya mengubah state lokal warna, TIDAK memanggil saveAnnotation() langsung
-                                            selectedColorHex = hex 
+                                        .clickable {
+                                            selectedColorHex = hex
                                         }
                                 )
                             }
@@ -643,5 +682,74 @@ fun ReaderScreen(
                 }) { Text("Batal") }
             }
         )
+    }
+}
+
+// Full-screen loading screen — ditampilkan sampai buku selesai di-index/dimuat
+@Composable
+fun IndexingLoadingScreen(
+    bookTitle: String,
+    isIndexing: Boolean,
+    progress: Int,
+    backgroundColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundColor),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 40.dp)
+        ) {
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (bookTitle.isNotBlank()) {
+                Text(
+                    text = bookTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            if (isIndexing && progress > 0) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Menyiapkan buku... $progress%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Memuat buku...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

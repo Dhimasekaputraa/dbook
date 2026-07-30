@@ -35,11 +35,11 @@
         var urlParams = new URLSearchParams(window.location.search);
         var initialCfi = urlParams.get('cfi');
         var bookIdParam = urlParams.get('bookId') || 'unknown';
-        var currentFontSize = 18
+        var currentFontSize = 18;
         var isOverviewActive = false;
 
         function getLocationsCacheKey() {
-            return "epub_location_" + bookIdParam + "_fs" + currentFontSize
+            return "epub_location_" + bookIdParam + "_fs" + currentFontSize;
         }
 
         function loadOrGenerateLocations() {
@@ -49,26 +49,66 @@
             try {
                 cached = localStorage.getItem(cacheKey);
             } catch (e) {
-                console.log("Local Storage error:", e)
+                console.log("Local Storage error:", e);
             }
 
+            // 1. MEMUAT DARI CACHE (JIKA SUDAH PERNAH DI-INDEX)
             if (cached) {
                 try {
                     book.locations.load(cached);
                     console.log("Locations loaded from cache, Total:", book.locations.total);
+                    if (window.Android && window.Android.onIndexingProgress) {
+                        try { window.Android.onIndexingProgress(100); } catch(e) {}
+                    }
                     return Promise.resolve();
                 } catch (e) {
                     console.log("Failed to load cached locations, regenerating:", e);
                 }
             }
 
-            return book.locations.generate(1600).then(function(){
+            // 2. BUKU PERTAMA KALI DIBUKA: SIAPKAN INTERCEPTOR PROGRESS RIIL
+            var totalSpineItems = (book.spine && book.spine.spineItems) ? book.spine.spineItems.length : 1;
+            var processedItems = 0;
+
+            // Menyadap method internal book.locations.process tanpa merusak pembuatan CFI asli
+            var originalProcess = book.locations.process.bind(book.locations);
+            book.locations.process = function(section) {
+                return originalProcess(section).then(function(result) {
+                    processedItems++;
+                    var percent = Math.min(99, Math.round((processedItems / totalSpineItems) * 100));
+                    
+                    if (window.Android && window.Android.onIndexingProgress) {
+                        try { window.Android.onIndexingProgress(percent); } catch(e) {}
+                    }
+                    return result;
+                });
+            };
+
+            if (window.Android && window.Android.onIndexingProgress) {
+                try { window.Android.onIndexingProgress(0); } catch(e) {}
+            }
+
+            // Jalankan engine resmi generate(1600) agar CFI 100% presisi
+            return book.locations.generate(1600).then(function() {
+                // Kembalikan method asli setelah selesai
+                book.locations.process = originalProcess;
+
                 try {
                     var generated = book.locations.save();
                     localStorage.setItem(cacheKey, generated);
                     console.log("Locations generated and cached. Total:", book.locations.total);
                 } catch (e) {
                     console.log("Failed to save locations to cache:", e);
+                }
+
+                if (window.Android && window.Android.onIndexingProgress) {
+                    try { window.Android.onIndexingProgress(100); } catch(e) {}
+                }
+            }).catch(function(err) {
+                book.locations.process = originalProcess;
+                console.log("Locations generate error:", err);
+                if (window.Android && window.Android.onIndexingProgress) {
+                    try { window.Android.onIndexingProgress(100); } catch(e) {}
                 }
             });
         }
@@ -108,7 +148,6 @@
 
         setTheme(false);
 
-        // PERBAIKAN: Sinkronisasi Status Overview dari Android
         function setOverviewState(active) {
             isOverviewActive = active;
             var viewer = document.getElementById("viewer");
@@ -146,23 +185,27 @@
                 console.log("Chapter parsing error (non-fatal:)", err);
             }
 
-            if (window.Android) {
-                window.Android.onChaptersLoaded(JSON.stringify(chapterList));
+            if (window.Android && window.Android.onChaptersLoaded) {
+                try { window.Android.onChaptersLoaded(JSON.stringify(chapterList)); } catch(e) {}
             }
 
-            if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
-                rendition.display(initialCfi);
+            // TAMPILKAN HALAMAN TERAKHIR DENGAN CFI RESMI
+            if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
+                return rendition.display(initialCfi);
             } else {
-                rendition.display();
+                return rendition.display();
             }
         }).catch(function(err) {
             console.log("Book ready chain error:", err);
-            if (initialCfi && initialCfi !== "null" && initialCfi !== "") {
+            if (window.Android && window.Android.onIndexingProgress) {
+                try { window.Android.onIndexingProgress(100); } catch(e) {}
+            }
+            if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
                 rendition.display(initialCfi);
             } else {
                 rendition.display();
             }
-        })
+        });
 
         function sendProgress(location) {
             if (window.Android && location && location.start) {
@@ -179,7 +222,7 @@
                     chapterName = navItem.label.trim();
                 }
 
-                window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi);
+                try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
         }
 
@@ -239,7 +282,6 @@
             });
         }
 
-        // --- MANAJEMEN GESTURE PINCH SATU ARAH & NAVIGASI ASLI ---
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
         var initialDistance = 0, isPinching = false;
@@ -273,14 +315,18 @@
                     if (deltaDistance < -pinchThreshold) {
                         if (!isOverviewActive) {
                             isOverviewActive = true;
-                            if (window.Android) window.Android.openOverview();
+                            if (window.Android && window.Android.openOverview) {
+                                try { window.Android.openOverview(); } catch(e) {}
+                            }
                         }
                         initialDistance = 0; 
                     } 
                     else if (deltaDistance > pinchThreshold) {
                         if (isOverviewActive) {
                             isOverviewActive = false;
-                            if (window.Android) window.Android.closeOverview();
+                            if (window.Android && window.Android.closeOverview) {
+                                try { window.Android.closeOverview(); } catch(e) {}
+                            }
                         }
                         initialDistance = 0;
                     }
@@ -299,7 +345,6 @@
                 }
             }, {passive: false});
 
-            // --- TAMBAHAN AMAN: DETEKSI SELEKSI TEKS UNTUK CUSTOM POPUP COMPOSE ---
             doc.addEventListener("selectionchange", function() {
                 var sel = doc.getSelection();
                 if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
@@ -308,7 +353,7 @@
                         var range = sel.getRangeAt(0);
                         var cfi = contents.cfiFromRange(range);
                         var rect = range.getBoundingClientRect();
-                        if (window.Android && cfi) {
+                        if (window.Android && cfi && window.Android.onTextSelectedWithPosition) {
                             window.Android.onTextSelectedWithPosition(
                                 cfi, selectedText,
                                 rect.left + (rect.width / 2),
@@ -317,8 +362,8 @@
                         }
                     } catch(err) {}
                 } else {
-                    if (window.Android) {
-                        window.Android.onSelectionCleared();
+                    if (window.Android && window.Android.onSelectionCleared) {
+                        try { window.Android.onSelectionCleared(); } catch(e) {}
                     }
                 }
             });
@@ -331,7 +376,9 @@
 
             if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
                 if (touchEndX >= screenWidth * 0.35 && touchEndX <= screenWidth * 0.65) {
-                    if (window.Android) window.Android.toggleOverview();
+                    if (window.Android && window.Android.toggleOverview) {
+                        try { window.Android.toggleOverview(); } catch(e) {}
+                    }
                 } 
                 else if (touchEndX < screenWidth * 0.35) {
                     safePrev();

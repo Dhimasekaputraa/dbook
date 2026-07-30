@@ -25,6 +25,10 @@ class BookRepositoryImpl(
         return bookDao.getBooksById(id)?.toDomainModel()
     }
 
+    override fun observeBookById(id: Long): Flow<Book?> {
+        return bookDao.observeBookById(id).map { entity -> entity?.toDomainModel() }
+    }
+
     override suspend fun getBookByFilePath(filePath: String): Book? {
         return bookDao.getBookByFilePath(filePath)?.toDomainModel()
     }

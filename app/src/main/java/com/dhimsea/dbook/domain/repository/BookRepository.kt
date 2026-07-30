@@ -4,9 +4,11 @@ import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.Flow
 
-interface BookRepository{
+interface BookRepository {
     fun getAllBooks(): Flow<List<Book>>
     suspend fun getBookById(id: Long): Book?
+    
+    fun observeBookById(id: Long): Flow<Book?>
     suspend fun getBookByFilePath(filePath: String): Book?
     suspend fun getAllFilePaths(): List<String>
     suspend fun insertBook(book: Book): Long
