@@ -43,73 +43,79 @@
         }
 
         function loadOrGenerateLocations() {
-            var cacheKey = getLocationsCacheKey();
-            var cached = null;
+            return new Promise(function(resolve) {
+                var cacheKey = getLocationsCacheKey();
+                var cached = null;
 
-            try {
-                cached = localStorage.getItem(cacheKey);
-            } catch (e) {
-                console.log("Local Storage error:", e);
-            }
-
-            // 1. MEMUAT DARI CACHE (JIKA SUDAH PERNAH DI-INDEX)
-            if (cached) {
                 try {
-                    book.locations.load(cached);
-                    console.log("Locations loaded from cache, Total:", book.locations.total);
+                    cached = localStorage.getItem(cacheKey);
+                } catch (e) {
+                    console.log("Local Storage error:", e);
+                }
+
+                // 1. MEMUAT DARI CACHE (JIKA SUDAH PERNAH DI-INDEX)
+                if (cached) {
+                    try {
+                        book.locations.load(cached);
+                        console.log("Locations loaded from cache, Total:", book.locations.total);
+                        if (window.Android && window.Android.onIndexingProgress) {
+                            try { window.Android.onIndexingProgress(100); } catch(e) {}
+                        }
+                        return resolve();
+                    } catch (e) {
+                        console.log("Failed to load cached locations, regenerating:", e);
+                    }
+                }
+
+                // 2. BUKU PERTAMA KALI DIBUKA: GENERATE LOCATIONS SAFE
+                var totalSpineItems = (book.spine && book.spine.spineItems) ? book.spine.spineItems.length : 1;
+                var processedItems = 0;
+
+                // Interceptor progress aman
+                var originalProcess = book.locations.process ? book.locations.process.bind(book.locations) : null;
+                if (originalProcess) {
+                    book.locations.process = function(section) {
+                        return originalProcess(section).then(function(result) {
+                            processedItems++;
+                            var percent = Math.min(99, Math.round((processedItems / totalSpineItems) * 100));
+                            if (window.Android && window.Android.onIndexingProgress) {
+                                try { window.Android.onIndexingProgress(percent); } catch(e) {}
+                            }
+                            return result;
+                        }).catch(function(err) {
+                            return null;
+                        });
+                    };
+                }
+
+                if (window.Android && window.Android.onIndexingProgress) {
+                    try { window.Android.onIndexingProgress(0); } catch(e) {}
+                }
+
+                // Jalankan generate lokasi dengan batas karakter (1600)
+                book.locations.generate(1600).then(function() {
+                    if (originalProcess) book.locations.process = originalProcess;
+
+                    try {
+                        var generated = book.locations.save();
+                        localStorage.setItem(cacheKey, generated);
+                        console.log("Locations generated and cached. Total:", book.locations.total);
+                    } catch (e) {
+                        console.log("Failed to save locations to cache:", e);
+                    }
+
                     if (window.Android && window.Android.onIndexingProgress) {
                         try { window.Android.onIndexingProgress(100); } catch(e) {}
                     }
-                    return Promise.resolve();
-                } catch (e) {
-                    console.log("Failed to load cached locations, regenerating:", e);
-                }
-            }
-
-            // 2. BUKU PERTAMA KALI DIBUKA: SIAPKAN INTERCEPTOR PROGRESS RIIL
-            var totalSpineItems = (book.spine && book.spine.spineItems) ? book.spine.spineItems.length : 1;
-            var processedItems = 0;
-
-            // Menyadap method internal book.locations.process tanpa merusak pembuatan CFI asli
-            var originalProcess = book.locations.process.bind(book.locations);
-            book.locations.process = function(section) {
-                return originalProcess(section).then(function(result) {
-                    processedItems++;
-                    var percent = Math.min(99, Math.round((processedItems / totalSpineItems) * 100));
-                    
+                    resolve();
+                }).catch(function(err) {
+                    if (originalProcess) book.locations.process = originalProcess;
+                    console.log("Locations generate error:", err);
                     if (window.Android && window.Android.onIndexingProgress) {
-                        try { window.Android.onIndexingProgress(percent); } catch(e) {}
+                        try { window.Android.onIndexingProgress(100); } catch(e) {}
                     }
-                    return result;
+                    resolve(); // Tetap resolve agar tidak stuck/loading selamanya
                 });
-            };
-
-            if (window.Android && window.Android.onIndexingProgress) {
-                try { window.Android.onIndexingProgress(0); } catch(e) {}
-            }
-
-            // Jalankan engine resmi generate(1600) agar CFI 100% presisi
-            return book.locations.generate(1600).then(function() {
-                // Kembalikan method asli setelah selesai
-                book.locations.process = originalProcess;
-
-                try {
-                    var generated = book.locations.save();
-                    localStorage.setItem(cacheKey, generated);
-                    console.log("Locations generated and cached. Total:", book.locations.total);
-                } catch (e) {
-                    console.log("Failed to save locations to cache:", e);
-                }
-
-                if (window.Android && window.Android.onIndexingProgress) {
-                    try { window.Android.onIndexingProgress(100); } catch(e) {}
-                }
-            }).catch(function(err) {
-                book.locations.process = originalProcess;
-                console.log("Locations generate error:", err);
-                if (window.Android && window.Android.onIndexingProgress) {
-                    try { window.Android.onIndexingProgress(100); } catch(e) {}
-                }
             });
         }
 
@@ -182,7 +188,7 @@
                     parseNavItems(book.navigation.toc);
                 }
             } catch (err) {
-                console.log("Chapter parsing error (non-fatal:)", err);
+                console.log("Chapter parsing error (non-fatal):", err);
             }
 
             if (window.Android && window.Android.onChaptersLoaded) {
@@ -194,11 +200,7 @@
             if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
                 console.log("[READER_LOG] Displaying target CFI:", initialCfi);
                 
-                // 1. Render dulu CFI target
                 return rendition.display(initialCfi).then(function() {
-                    // 2. Pastikan layout iframe/DOM benar-benar sudah siap
-                    // Jika epub.js sempat melempar ke awal chapter karena layout belum siap,
-                    // panggil display(initialCfi) sekali lagi secara tegas setelah layout matang.
                     setTimeout(function() {
                         var currentLoc = rendition.currentLocation();
                         if (currentLoc && currentLoc.start && currentLoc.start.cfi !== initialCfi) {
@@ -242,10 +244,6 @@
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
         }
-
-        rendition.on("relocated", function(location) {
-            sendProgress(location);
-        });
 
         function safeNext() {
             if (isOverviewActive) return;
@@ -371,11 +369,9 @@
                         var cfi = contents.cfiFromRange(range);
                         var rect = range.getBoundingClientRect();
 
-                        // Dapatkan posisi IFrame tempat teks dirender
                         var iframe = document.querySelector("iframe");
                         var iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
 
-                        // Hitung koordinat absolut di layar WebView
                         var posX = iframeRect.left + rect.left + (rect.width / 2);
                         var posY = iframeRect.top + rect.bottom;
 
@@ -420,6 +416,60 @@
             }
         }
 
+        // --- FUNGSI PENCARIAN TEKS PADA EPUB ---
+        function searchInBook(query) {
+            if (!query) return;
+
+            var searchPromises = book.spine.spineItems.map(function(item) {
+                return item.load(book.load.bind(book)).then(function() {
+                    var results = item.find(query) || [];
+                    
+                    var chapterName = "Chapter";
+                    try {
+                        var cleanHref = item.href ? item.href.split('#')[0] : "";
+                        var navItem = book.navigation.get(item.href) || book.navigation.get(cleanHref);
+                        if (navItem && navItem.label) {
+                            chapterName = navItem.label.trim();
+                        }
+                    } catch(e) {}
+
+                    var formatted = results.map(function(res) {
+                        var pageNum = 1;
+                        try {
+                            var rawPage = book.locations.locationFromCfi(res.cfi);
+                            pageNum = (rawPage && rawPage > 0) ? rawPage : 1;
+                        } catch(e) {}
+
+                        return {
+                            cfi: res.cfi,
+                            excerpt: res.excerpt || "",
+                            chapter: chapterName,
+                            page: pageNum
+                        };
+                    });
+
+                    item.unload();
+                    return formatted;
+                }).catch(function(err) {
+                    console.error("Error loading spine item for search:", err);
+                    return [];
+                });
+            });
+
+            Promise.all(searchPromises).then(function(resultsArray) {
+                var flatResults = [].concat.apply([], resultsArray);
+
+                if (window.Android && window.Android.onSearchResultsLoaded) {
+                    window.Android.onSearchResultsLoaded(JSON.stringify(flatResults));
+                }
+            }).catch(function(err) {
+                console.error("Search Promise.all error:", err);
+                if (window.Android && window.Android.onSearchResultsLoaded) {
+                    window.Android.onSearchResultsLoaded(JSON.stringify([]));
+                }
+            });
+        }
+
         function goToPercent(percent) {
             var cfi = book.locations.cfiFromPercentage(percent);
             rendition.display(cfi);
@@ -449,6 +499,122 @@
                 });
             } catch(e) { console.error(e); }
         }
+
+        var searchHighlightCfi = null;
+        var isNavigatingToSearch = false;
+
+        function goToSearchResult(cfi, searchText) {
+            if (!cfi) return;
+
+            isNavigatingToSearch = true;
+
+            // 1. Pindah ke halaman target
+            rendition.display(cfi).then(function() {
+                // 2. Berikan jeda agar IFrame halaman selesai memuat penuh
+                setTimeout(function() {
+                    // Coba highlight via CFI standar epub.js dulu
+                    applySearchHighlight(cfi);
+
+                    // Jika ada searchText, jalankan fallback penandaan langsung di DOM IFrame
+                    if (searchText) {
+                        highlightTextInIframe(searchText);
+                    }
+
+                    isNavigatingToSearch = false;
+                }, 250); // Jeda 250ms memastikan IFrame siap
+            }).catch(function(err) {
+                console.error("Error displaying search CFI:", err);
+                isNavigatingToSearch = false;
+            });
+        }
+
+        function applySearchHighlight(cfi) {
+            clearSearchHighlight();
+            searchHighlightCfi = cfi;
+            
+            try {
+                rendition.annotations.highlight(cfi, {}, function(e) {}, "search-temp-hl", {
+                    "fill": "#FFEB3B",
+                    "fill-opacity": "0.6",
+                    "mix-blend-mode": "multiply"
+                });
+            } catch(e) {
+                console.error("Failed to apply search highlight via annotation:", e);
+            }
+        }
+
+        // Fallback: Highlight langsung ke teks di DOM IFrame (100% akurat & terlihat)
+        function highlightTextInIframe(searchText) {
+            try {
+                var iframe = document.querySelector("#viewer iframe");
+                if (!iframe || !iframe.contentDocument) return;
+
+                var doc = iframe.contentDocument;
+                var win = iframe.contentWindow;
+
+                // Bersihkan highlight DOM lama jika ada
+                clearDomHighlights(doc);
+
+                // Gunakan window.find jika didukung browser/webview
+                if (win && win.find) {
+                    win.getSelection().removeAllRanges();
+                    if (win.find(searchText, false, false, true, false, false, false)) {
+                        var sel = win.getSelection();
+                        if (sel.rangeCount > 0) {
+                            var range = sel.getRangeAt(0);
+                            var span = doc.createElement("mark");
+                            span.className = "search-dom-highlight";
+                            span.style.backgroundColor = "#FFEB3B";
+                            span.style.color = "#000000";
+                            span.style.borderRadius = "2px";
+                            span.style.padding = "2px 0";
+                            
+                            range.surroundContents(span);
+                            win.getSelection().removeAllRanges(); // Hilangkan seleksi biru
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("DOM highlight fallback info:", e);
+            }
+        }
+
+        function clearDomHighlights(doc) {
+            try {
+                if (!doc) {
+                    var iframe = document.querySelector("#viewer iframe");
+                    if (iframe) doc = iframe.contentDocument;
+                }
+                if (doc) {
+                    var marks = doc.querySelectorAll("mark.search-dom-highlight");
+                    marks.forEach(function(m) {
+                        var parent = m.parentNode;
+                        while (m.firstChild) parent.insertBefore(m.firstChild, m);
+                        parent.removeChild(m);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        function clearSearchHighlight() {
+            if (searchHighlightCfi) {
+                try {
+                    rendition.annotations.remove(searchHighlightCfi, "highlight");
+                    rendition.annotations.remove("search-temp-hl", "highlight");
+                } catch(e) {}
+                searchHighlightCfi = null;
+            }
+            clearDomHighlights();
+        }
+
+        // OTOMATIS HAPUS HIGHLIGHT SAAT NAVIGASI MANUAL / BERPINDAH HALAMAN
+        rendition.on("relocated", function(location) {
+            sendProgress(location);
+            
+            if (!isNavigatingToSearch) {
+                clearSearchHighlight();
+            }
+        });
     </script>
 </body>
 </html>

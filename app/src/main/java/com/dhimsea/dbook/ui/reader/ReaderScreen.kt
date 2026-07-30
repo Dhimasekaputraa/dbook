@@ -32,7 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material3.*
@@ -85,7 +85,8 @@ class ReaderBridge(
     private val onChaptersLoaded: (List<ChapterMarker>) -> Unit,
     private val onTextSelected: (String, String, Float, Float) -> Unit,
     private val onSelectionCleared: () -> Unit,
-    private val onIndexingProgressUpdate: (Int) -> Unit
+    private val onIndexingProgressUpdate: (Int) -> Unit,
+    private val onSearchFinished: (String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -135,6 +136,11 @@ class ReaderBridge(
         mainHandler.post { onSelectionCleared() }
     }
 
+    @JavascriptInterface
+    fun onSearchResultsLoaded(jsonResults: String) {
+        mainHandler.post { onSearchFinished(jsonResults) }
+    }
+
     // Dipanggil dari reader.html selama proses locations.generate() berjalan
     @JavascriptInterface
     fun onIndexingProgress(percent: Int) {
@@ -147,8 +153,10 @@ class ReaderBridge(
 fun ReaderScreen(
     filePath: String,
     initialCfiToJump: String? = null,
+    searchQueryToHighlight: String? = null,
     bookRepository: BookRepository,
     onOpenAnnotationScreen: (Long) -> Unit,
+    onNavigateToSearch: (Long, String, String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -177,6 +185,10 @@ fun ReaderScreen(
     // State Seleksi Teks & Dialog Note
     var pendingSelection by remember { mutableStateOf<PendingSelection?>(null) }
     var showNoteDialog by remember { mutableStateOf(false) }
+
+    // Search
+    var pendingSearchQuery by remember { mutableStateOf<String?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
 
     val presetColors = listOf(
         "#FFEB3B" to Color(0xFFFFEB3B), // Yellow
@@ -402,6 +414,18 @@ fun ReaderScreen(
                                     if (percent >= 100) {
                                         isIndexing = false
                                     }
+                                },
+                                onSearchFinished = { jsonResults ->
+                                    isSearching = false
+                                    val bookId = currentBook?.id
+                                    val query = pendingSearchQuery
+
+                                    Log.d("DBOOK_DEBUG", "Hasil pencarian diterima: $jsonResults")
+                                    
+                                    if (bookId != null && query != null) {
+                                        onNavigateToSearch(bookId, query, jsonResults)
+                                    }
+                                    pendingSearchQuery = null
                                 }
                             ), "Android")
 
@@ -409,6 +433,16 @@ fun ReaderScreen(
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
                                     view?.evaluateJavascript("setTheme($isDarkMode);", null)
+
+                                    if (!initialCfiToJump.isNullOrEmpty()) {
+                                        val query = searchQueryToHighlight ?: ""
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            view?.evaluateJavascript(
+                                                "javascript:goToSearchResult('$initialCfiToJump', '$query');",
+                                                null
+                                            )
+                                        }, 400)
+                                    }
 
                                     currentBook?.id?.let { bookId ->
                                         scope.launch(Dispatchers.IO) {
@@ -543,6 +577,42 @@ fun ReaderScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = "Add Note",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val textToSearch = pendingSelection?.text ?: ""
+                                    pendingSelection = null
+                                    webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
+
+                                    if (textToSearch.isNotEmpty()) {
+                                        pendingSearchQuery = textToSearch
+                                        isSearching = true
+                                        
+                                        val escaped = textToSearch
+                                            .replace("\\", "\\\\")
+                                            .replace("'", "\\'")
+                                        webViewRef?.evaluateJavascript("searchInBook('$escaped');", null)
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Search in Book",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -766,7 +836,7 @@ fun IndexingLoadingScreen(
                     text = "Memuat buku...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    )
             }
         }
     }

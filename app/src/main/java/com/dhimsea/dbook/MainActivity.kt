@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,6 +27,8 @@ import com.dhimsea.dbook.ui.library.LibraryViewModel
 import com.dhimsea.dbook.ui.library.LibraryViewModelFactory
 import com.dhimsea.dbook.ui.navigation.Screen
 import com.dhimsea.dbook.ui.reader.ReaderScreen
+import com.dhimsea.dbook.ui.search.SearchResultsScreen
+import com.dhimsea.dbook.ui.search.SearchViewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -93,11 +96,14 @@ class MainActivity : ComponentActivity() {
                     ) { backStackEntry ->
                         val encodedPath = backStackEntry.arguments?.getString("filePath") ?: ""
                         val decodedPath = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8.toString())
+
                         val cfiToJump = backStackEntry.savedStateHandle.get<String>("targetCfi")
+                        val searchQuery = backStackEntry.savedStateHandle.get<String>("searchQuery")
 
                         ReaderScreen(
                             filePath = decodedPath,
                             initialCfiToJump = cfiToJump,
+                            searchQueryToHighlight = searchQuery,
                             bookRepository = app.bookRepository,
                             onOpenAnnotationScreen = { bookId ->
                                 val title = "Buku"
@@ -105,7 +111,71 @@ class MainActivity : ComponentActivity() {
                                 val encodedPath = URLEncoder.encode(decodedPath, StandardCharsets.UTF_8.toString())
                                 navController.navigate("annotation/$bookId/$encodedTitle/$encodedPath")
                             },
+                            onNavigateToSearch = { bookId, queryText, resultsJson ->
+                                val encodedQuery = URLEncoder.encode(queryText, StandardCharsets.UTF_8.toString())
+                                val encodedPathForSearch = URLEncoder.encode(decodedPath, StandardCharsets.UTF_8.toString())
+                                navController.navigate("search_results/$bookId/$encodedQuery/$encodedPathForSearch")
+                                navController.currentBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("resultsJson", resultsJson)
+                            },
                             onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    // --- SEARCH RESULTS SCREEN (ROUTE BARU) ---
+                    composable(
+                        route = "search_results/{bookId}/{queryText}/{filePath}",
+                        arguments = listOf(
+                            navArgument("bookId") { type = NavType.LongType },
+                            navArgument("queryText") { type = NavType.StringType },
+                            navArgument("filePath") { type = NavType.StringType }
+                        ),
+                        enterTransition = {
+                            slideIntoContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(300)
+                            )
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(250)
+                            )
+                        }
+                    ) { backStackEntry ->
+                        val rawQuery = backStackEntry.arguments?.getString("queryText") ?: ""
+                        val decodedQuery = URLDecoder.decode(rawQuery, StandardCharsets.UTF_8.toString())
+
+                        val rawPath = backStackEntry.arguments?.getString("filePath") ?: ""
+                        val decodedFilePath = URLDecoder.decode(rawPath, StandardCharsets.UTF_8.toString())
+
+                        val resultsJson = backStackEntry.savedStateHandle.get<String>("resultsJson")
+
+                        val searchViewModel: SearchViewModel = viewModel()
+                        val searchResults by searchViewModel.searchResults.collectAsState()
+                        val isLoading by searchViewModel.isLoading.collectAsState()
+
+                        LaunchedEffect(resultsJson) {
+                            resultsJson?.let { searchViewModel.parseSearchResults(it) }
+                        }
+
+                        SearchResultsScreen(
+                            queryText = decodedQuery,
+                            searchResults = searchResults,
+                            isLoading = isLoading,
+                            onResultClick = { targetCfi, query ->
+                                val encodedPath = URLEncoder.encode(decodedFilePath, StandardCharsets.UTF_8.toString())
+
+                                navController.navigate(Screen.Reader.createRoute(encodedPath)) {
+                                    popUpTo(Screen.Library.route)
+                                }
+                                navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                    set("targetCfi", targetCfi)
+                                    set("searchQuery", query)
+                                }
+                            },
+                            onBackClick = { navController.popBackStack() }
                         )
                     }
                     
@@ -201,7 +271,6 @@ class MainActivity : ComponentActivity() {
                     ) { backStackEntry ->
                         val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
                         
-                        // DI SINI PERBAIKANNYA: Menggunakan app.bookRepository
                         val factory = BookDetailViewModelFactory(app.bookRepository, bookId)
                         val viewModel: BookDetailViewModel = viewModel(factory = factory)
 
