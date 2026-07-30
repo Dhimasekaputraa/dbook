@@ -370,11 +370,18 @@
                         var range = sel.getRangeAt(0);
                         var cfi = contents.cfiFromRange(range);
                         var rect = range.getBoundingClientRect();
+
+                        // Dapatkan posisi IFrame tempat teks dirender
+                        var iframe = document.querySelector("iframe");
+                        var iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+
+                        // Hitung koordinat absolut di layar WebView
+                        var posX = iframeRect.left + rect.left + (rect.width / 2);
+                        var posY = iframeRect.top + rect.bottom;
+
                         if (window.Android && cfi && window.Android.onTextSelectedWithPosition) {
                             window.Android.onTextSelectedWithPosition(
-                                cfi, selectedText,
-                                rect.left + (rect.width / 2),
-                                rect.bottom
+                                cfi, selectedText, posX, posY
                             );
                         }
                     } catch(err) {}

@@ -54,6 +54,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -475,14 +476,22 @@ fun ReaderScreen(
             }
         }
 
-        // --- POPUP MENU CUSTOM ---
+        // --- POPUP MENU CUSTOM (MUNCUL PRESISI DI SELEKSI TEKS) ---
         if (pendingSelection != null && !showNoteDialog) {
             val pxX = (pendingSelection!!.posX * density).toInt()
             val pxY = (pendingSelection!!.posY * density).toInt()
 
+            // Lebar Popup Card 220.dp -> Setengahnya adalah 110.dp
+            val popupHalfWidthPx = (110 * density).toInt()
+            val popupOffsetYPx = (12 * density).toInt()
+
             Popup(
                 alignment = Alignment.TopStart,
-                offset = IntOffset(x = (pxX - (100 * density)).toInt(), y = (pxY + (10 * density)).toInt()),
+                // Posisikan X di tengah teks (pxX - popupHalfWidthPx) dengan margin aman dari tepi layar
+                offset = IntOffset(
+                    x = (pxX - popupHalfWidthPx).coerceIn(16, (LocalConfiguration.current.screenWidthDp * density).toInt() - (220 * density).toInt() - 16),
+                    y = pxY + popupOffsetYPx
+                ),
                 onDismissRequest = {
                     pendingSelection = null
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
