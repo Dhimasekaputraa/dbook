@@ -510,22 +510,36 @@ fun ReaderScreen(
             }
         }
 
-        // --- POPUP MENU CUSTOM (MUNCUL PRESISI DI SELEKSI TEKS) ---
+        // --- POPUP MENU CUSTOM ---
         if (pendingSelection != null && !showNoteDialog) {
+            val screenWidthPx = (LocalConfiguration.current.screenWidthDp * density).toInt()
+            val screenHeightPx = (LocalConfiguration.current.screenHeightDp * density).toInt()
+
             val pxX = (pendingSelection!!.posX * density).toInt()
             val pxY = (pendingSelection!!.posY * density).toInt()
 
-            // Lebar Popup Card 220.dp -> Setengahnya adalah 110.dp
-            val popupHalfWidthPx = (110 * density).toInt()
-            val popupOffsetYPx = (12 * density).toInt()
+            // Ukuran Popup Card
+            val popupWidthPx = (220 * density).toInt()
+            val popupHeightPx = (160 * density).toInt()
+            val popupHalfWidthPx = popupWidthPx / 2
+
+            val marginOffsetPx = (16 * density).toInt()
+
+            val extraTopOffsetPx = (36 * density).toInt()
+
+            val targetX = (pxX - popupHalfWidthPx).coerceIn(16, screenWidthPx - popupWidthPx - 16)
+
+            val isSelectionInLowerHalf = pxY > (screenHeightPx / 2)
+
+            val targetY = if (isSelectionInLowerHalf) {
+                (pxY - popupHeightPx - marginOffsetPx - extraTopOffsetPx).coerceAtLeast(16)
+            } else {
+                (pxY + marginOffsetPx).coerceAtMost(screenHeightPx - popupHeightPx - 16)
+            }
 
             Popup(
                 alignment = Alignment.TopStart,
-                // Posisikan X di tengah teks (pxX - popupHalfWidthPx) dengan margin aman dari tepi layar
-                offset = IntOffset(
-                    x = (pxX - popupHalfWidthPx).coerceIn(16, (LocalConfiguration.current.screenWidthDp * density).toInt() - (220 * density).toInt() - 16),
-                    y = pxY + popupOffsetYPx
-                ),
+                offset = IntOffset(x = targetX, y = targetY),
                 onDismissRequest = {
                     pendingSelection = null
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
