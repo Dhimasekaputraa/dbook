@@ -228,6 +228,8 @@ fun ReaderScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
+            Log.d("DBOOK_DEBUG", "Saving final CFI to DB: $latestCfi")
             if (server.isAlive) server.stop()
             val window = (context as? Activity)?.window
             if (window != null) {
@@ -376,6 +378,8 @@ fun ReaderScreen(
                                     currentChapter = chapter
                                     latestCfi = cfi
 
+                                    Log.d("DBOOK_DEBUG", "UPDATE PROGRESS -> Page: $page | CFI Baru: $cfi")
+
                                     currentBook?.let { book ->
                                         scope.launch(Dispatchers.IO) {
                                             bookRepository.updateReadingProgress(bookId = book.id, page = page, cfi = cfi, progress = percent)
@@ -429,6 +433,11 @@ fun ReaderScreen(
                             val targetCfi = initialCfiToJump ?: currentBook?.lastReadCfi
                             val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
                             val bookIdParam = currentBook?.id ?: 0L
+
+                            Log.d("DBOOK_DEBUG", "=== LOAD READER ===")
+                            Log.d("DBOOK_DEBUG", "Book ID: $bookIdParam")
+                            Log.d("DBOOK_DEBUG", "Target CFI dari DB: $targetCfi")
+
                             loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi&bookId=$bookIdParam")
                             webViewRef = this
                         }

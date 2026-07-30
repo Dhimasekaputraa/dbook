@@ -190,8 +190,23 @@
             }
 
             // TAMPILKAN HALAMAN TERAKHIR DENGAN CFI RESMI
+            console.log("[READER_LOG] initialCfi dari URL:", initialCfi);
             if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
-                return rendition.display(initialCfi);
+                console.log("[READER_LOG] Displaying target CFI:", initialCfi);
+                
+                // 1. Render dulu CFI target
+                return rendition.display(initialCfi).then(function() {
+                    // 2. Pastikan layout iframe/DOM benar-benar sudah siap
+                    // Jika epub.js sempat melempar ke awal chapter karena layout belum siap,
+                    // panggil display(initialCfi) sekali lagi secara tegas setelah layout matang.
+                    setTimeout(function() {
+                        var currentLoc = rendition.currentLocation();
+                        if (currentLoc && currentLoc.start && currentLoc.start.cfi !== initialCfi) {
+                            console.log("[READER_LOG] Retrying display for precise CFI alignment...");
+                            rendition.display(initialCfi);
+                        }
+                    }, 100);
+                });
             } else {
                 return rendition.display();
             }
@@ -214,6 +229,8 @@
                 var currentPage = (rawPage && rawPage > 0) ? rawPage : 1;
                 var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
                 var currentCfi = location.start.cfi;
+
+                console.log("[READER_LOG] Relocated -> Page:", currentPage, "CFI:", currentCfi);
                 
                 var chapterName = "Chapter";
                 var cleanHref = location.start.href.split('#')[0];
