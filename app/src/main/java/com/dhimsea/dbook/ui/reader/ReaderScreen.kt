@@ -30,11 +30,14 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,9 +46,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -54,7 +60,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -141,7 +146,6 @@ class ReaderBridge(
         mainHandler.post { onSearchFinished(jsonResults) }
     }
 
-    // Dipanggil dari reader.html selama proses locations.generate() berjalan
     @JavascriptInterface
     fun onIndexingProgress(percent: Int) {
         mainHandler.post { onIndexingProgressUpdate(percent) }
@@ -176,19 +180,20 @@ fun ReaderScreen(
     var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
     var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
-    // State progres indexing buku (proses locations.generate())
     var indexingProgress by remember { mutableIntStateOf(0) }
     var isIndexing by remember { mutableStateOf(true) }
 
     var latestCfi by remember { mutableStateOf<String?>(null) }
 
-    // State Seleksi Teks & Dialog Note
     var pendingSelection by remember { mutableStateOf<PendingSelection?>(null) }
     var showNoteDialog by remember { mutableStateOf(false) }
 
-    // Search
     var pendingSearchQuery by remember { mutableStateOf<String?>(null) }
     var isSearching by remember { mutableStateOf(false) }
+
+    var isSearchBarExpanded by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val presetColors = listOf(
         "#FFEB3B" to Color(0xFFFFEB3B), // Yellow
@@ -205,6 +210,8 @@ fun ReaderScreen(
             insetsController.show(WindowInsetsCompat.Type.systemBars())
             webViewRef?.evaluateJavascript("setOverviewState(true);", null)
         } else {
+            isSearchBarExpanded = false
+            searchText = ""
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             webViewRef?.evaluateJavascript("setOverviewState(false);", null)
@@ -213,7 +220,7 @@ fun ReaderScreen(
 
     val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
     val animatedScale by animateFloatAsState(targetValue = if (isOverviewMode) 0.76f else 1.0f, animationSpec = spec, label = "")
-    val animatedOffsetY by animateFloatAsState(targetValue = if (isOverviewMode) -20f else 0f, animationSpec = spec, label = "")
+    val animatedOffsetY by animateFloatAsState(targetValue = if (isOverviewMode) 6f else 0f, animationSpec = spec, label = "")
     val animatedCornerRadius by animateFloatAsState(targetValue = if (isOverviewMode) 16f else 0f, animationSpec = spec, label = "")
     val animatedElevation by animateFloatAsState(targetValue = if (isOverviewMode) 12f else 0f, animationSpec = spec, label = "")
     val outerBackgroundColor = if (isOverviewMode) MaterialTheme.colorScheme.surfaceContainer else if (isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
@@ -249,7 +256,6 @@ fun ReaderScreen(
                 WindowCompat.getInsetsController(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
             }
 
-            // PERBAIKAN: Perbarui Waktu Terakhir Dibaca saat keluar dari Reader
             currentBook?.let { book ->
                 val cfiToSave = latestCfi ?: book.lastReadCfi
                 scope.launch(Dispatchers.IO) {
@@ -264,7 +270,19 @@ fun ReaderScreen(
         }
     }
 
-    // Fungsi Simpan Anotasi ke Database & WebView
+    // Search function
+    fun executeSearch(query: String) {
+        if (query.isBlank()) return
+        keyboardController?.hide()
+        pendingSearchQuery = query
+        isSearching = true
+
+        val escaped = query
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+        webViewRef?.evaluateJavascript("searchInBook('$escaped');", null)
+    }
+
     fun saveAnnotation(colorHex: String, noteText: String = "") {
         val currentSelection = pendingSelection ?: return
         val bookId = currentBook?.id ?: return
@@ -308,18 +326,77 @@ fun ReaderScreen(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (isSearchBarExpanded) {
+                    IconButton(onClick = {
+                        isSearchBarExpanded = false
+                        searchText = ""
+                    }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tutup Pencarian",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it },
+                        placeholder = { Text("Cari dalam buku...") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 4.dp),
+                        trailingIcon = {
+                            if (searchText.isNotEmpty()) {
+                                IconButton(onClick = { searchText = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Bersihkan"
+                                    )
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { executeSearch(searchText) }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    IconButton(onClick = { executeSearch(searchText) }) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Cari",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = currentBook?.title ?: "",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    )
+                    IconButton(onClick = { isSearchBarExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Cari dalam Buku",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Text(
-                    text = currentBook?.title ?: "",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
             }
         }
 
@@ -493,7 +570,7 @@ fun ReaderScreen(
                 )
             }
 
-            // FULL-SCREEN LOADING OVERLAY — menutup WebView sampai buku siap di-index/dimuat
+            // FULL-SCREEN LOADING OVERLAY
             AnimatedVisibility(
                 visible = isLoading || isIndexing,
                 exit = fadeOut(),
@@ -518,17 +595,14 @@ fun ReaderScreen(
             val pxX = (pendingSelection!!.posX * density).toInt()
             val pxY = (pendingSelection!!.posY * density).toInt()
 
-            // Ukuran Popup Card
             val popupWidthPx = (220 * density).toInt()
             val popupHeightPx = (160 * density).toInt()
             val popupHalfWidthPx = popupWidthPx / 2
 
             val marginOffsetPx = (16 * density).toInt()
-
             val extraTopOffsetPx = (36 * density).toInt()
 
             val targetX = (pxX - popupHalfWidthPx).coerceIn(16, screenWidthPx - popupWidthPx - 16)
-
             val isSelectionInLowerHalf = pxY > (screenHeightPx / 2)
 
             val targetY = if (isSelectionInLowerHalf) {
@@ -636,7 +710,7 @@ fun ReaderScreen(
             }
         }
 
-        // --- BOTTOM DOCK SLIDER ---
+        // --- Page Navigation ---
         AnimatedVisibility(
             visible = isOverviewMode,
             enter = slideInVertically { it } + fadeIn(),
@@ -704,7 +778,7 @@ fun ReaderScreen(
         }
     }
 
-    // --- MODAL DIALOG UNTUK MENULIS NOTE ---
+    // --- MODAL DIALOG : NOTE ---
     if (showNoteDialog && pendingSelection != null) {
         var noteInput by remember { mutableStateOf("") }
         var selectedColorHex by remember { mutableStateOf("#FFEB3B") }
@@ -787,7 +861,7 @@ fun ReaderScreen(
     }
 }
 
-// Full-screen loading screen — ditampilkan sampai buku selesai di-index/dimuat
+// Loading screen : Indexing Book
 @Composable
 fun IndexingLoadingScreen(
     bookTitle: String,
@@ -850,7 +924,7 @@ fun IndexingLoadingScreen(
                     text = "Memuat buku...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                )
             }
         }
     }
