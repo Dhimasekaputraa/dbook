@@ -10,12 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
 import com.dhimsea.dbook.domain.model.SearchResult
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +35,7 @@ fun SearchResultsScreen(
                         Text(
                             text = "Pencarian: \"$queryText\"",
                             style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
+                            maxLines = 1, // KEMBALIKAN KE 1 AGAR HEADER RAPI
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
@@ -80,7 +80,6 @@ fun SearchResultsScreen(
                         SearchResultCard(
                             result = result,
                             queryText = queryText,
-                            // UBAH: Teruskan CFI + queryText saat diklik
                             onClick = { onResultClick(result.cfi, queryText) } 
                         )
                     }
@@ -159,7 +158,7 @@ fun SearchResultCard(
                 text = annotatedExcerpt,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 3,
+                maxLines = 6,
                 overflow = TextOverflow.Ellipsis
             )
         }

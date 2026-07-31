@@ -412,7 +412,7 @@
             }
         }
 
-        // --- FUNGSI PENCARIAN TEKS PADA EPUB ---
+        // --- FUNGSI PENCARIAN TEKS EPUB (STABIL: CENTER ANCHOR) ---
         function searchInBook(query) {
             if (!query) return;
 
@@ -429,16 +429,102 @@
                         }
                     } catch(e) {}
 
+                    var fullChapterText = "";
+                    if (item.document && item.document.body) {
+                        var docClone = item.document.body.cloneNode(true);
+                        var headersAndTitles = docClone.querySelectorAll('h1, h2, h3, h4, h5, h6, .chapter-title, .title, header');
+                        headersAndTitles.forEach(function(headerEl) { headerEl.remove(); });
+                        fullChapterText = (docClone.textContent || "").replace(/\s+/g, ' ').trim();
+                    }
+
+                    var lastSearchIdx = 0;
+
                     var formatted = results.map(function(res) {
                         var pageNum = 1;
                         try {
                             var rawPage = book.locations.locationFromCfi(res.cfi);
-                            pageNum = (rawPage && rawPage > 0) ? rawPage : 1;
+                            if (rawPage && rawPage > 0) {
+                                pageNum = Math.max(1, rawPage - 1);
+                            }
                         } catch(e) {}
+
+                        var richExcerpt = "";
+
+                        if (fullChapterText) {
+                            var lowerFull = fullChapterText.toLowerCase();
+                            var lowerQuery = query.trim().toLowerCase();
+
+                            // Cari indeks query berikutnya di bab ini
+                            var matchIdx = lowerFull.indexOf(lowerQuery, lastSearchIdx);
+
+                            if (matchIdx !== -1) {
+                                // Kuota seimbang di kiri & kanan agar query selalu di TENGAH
+                                var padding = 110; 
+
+                                // --- 1. HITUNG BATAS DEPAN (START) ---
+                                var rawStart = Math.max(0, matchIdx - padding);
+                                var start = rawStart;
+
+                                // Jika ini hasil pencarian lanjutan pada bab yang sama,
+                                // mulailah dari setelah lokasi query sebelumnya
+                                if (lastSearchIdx > 0 && lastSearchIdx < matchIdx) {
+                                    var periodAfterPrevious = lowerFull.indexOf('.', lastSearchIdx);
+                                    if (periodAfterPrevious !== -1 && periodAfterPrevious < matchIdx && periodAfterPrevious > rawStart) {
+                                        start = periodAfterPrevious + 1;
+                                    } else {
+                                        start = Math.max(lastSearchIdx, rawStart);
+                                    }
+                                } else if (rawStart > 0) {
+                                    var spaceIdx = fullChapterText.indexOf(' ', rawStart);
+                                    start = (spaceIdx !== -1 && spaceIdx < matchIdx) ? spaceIdx + 1 : rawStart;
+                                }
+
+                                // Update lokasi kursor untuk hasil berikutnya
+                                lastSearchIdx = matchIdx + lowerQuery.length;
+
+                                // --- 2. HITUNG BATAS BELAKANG (END) ---
+                                var rawEnd = Math.min(fullChapterText.length, matchIdx + lowerQuery.length + padding);
+                                var end = rawEnd;
+
+                                var nextMatchIdx = lowerFull.indexOf(lowerQuery, lastSearchIdx);
+
+                                // Jika ada query lain di dekatnya, potong di titik sebelum query tersebut
+                                if (nextMatchIdx !== -1 && nextMatchIdx < rawEnd) {
+                                    var periodBeforeNext = lowerFull.lastIndexOf('.', nextMatchIdx);
+                                    if (periodBeforeNext !== -1 && periodBeforeNext > matchIdx) {
+                                        end = periodBeforeNext + 1;
+                                    } else {
+                                        end = nextMatchIdx;
+                                    }
+                                } else if (rawEnd < fullChapterText.length) {
+                                    // Jika dekat dengan titik akhir kalimat, potong di titik tersebut
+                                    var periodAfterMatch = fullChapterText.indexOf('.', matchIdx + lowerQuery.length);
+                                    if (periodAfterMatch !== -1 && periodAfterMatch <= rawEnd) {
+                                        end = periodAfterMatch + 1;
+                                    } else {
+                                        var spaceIdx = fullChapterText.lastIndexOf(' ', rawEnd);
+                                        end = (spaceIdx !== -1 && spaceIdx > matchIdx + lowerQuery.length) ? spaceIdx : rawEnd;
+                                    }
+                                }
+
+                                // --- 3. EKSTRAKSI TEKS ---
+                                richExcerpt = fullChapterText.substring(start, end).trim();
+
+                                if (start > 0) richExcerpt = '...' + richExcerpt;
+                                if (end < fullChapterText.length && !richExcerpt.endsWith('.')) {
+                                    richExcerpt = richExcerpt + '...';
+                                }
+                            }
+                        }
+
+                        // Fallback
+                        if (!richExcerpt) {
+                            richExcerpt = res.excerpt ? res.excerpt.trim() : query;
+                        }
 
                         return {
                             cfi: res.cfi,
-                            excerpt: res.excerpt || "",
+                            excerpt: richExcerpt,
                             chapter: chapterName,
                             page: pageNum
                         };
@@ -464,6 +550,25 @@
                     window.Android.onSearchResultsLoaded(JSON.stringify([]));
                 }
             });
+        }
+
+        function createLongerExcerpt(fullText, matchQuery, padding = 120) {
+            if (!fullText || !matchQuery) return fullText || "";
+
+            const index = fullText.toLowerCase().indexOf(matchQuery.toLowerCase());
+            if (index === -1) {
+                return fullText.substring(0, padding * 2) + '...';
+            }
+
+            const start = Math.max(0, index - padding);
+            const end = Math.min(fullText.length, index + matchQuery.length + padding);
+
+            let snippet = fullText.substring(start, end);
+
+            if (start > 0) snippet = '...' + snippet;
+            if (end < fullText.length) snippet = snippet + '...';
+
+            return snippet;
         }
 
         function goToPercent(percent) {

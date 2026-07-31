@@ -498,6 +498,7 @@ fun ReaderScreen(
                                     val query = pendingSearchQuery
 
                                     Log.d("DBOOK_DEBUG", "Hasil pencarian diterima: $jsonResults")
+                                    Log.d("DBOOK_DEBUG", "Panjang teks JSON dari JS: ${jsonResults.length}")
                                     
                                     if (bookId != null && query != null) {
                                         onNavigateToSearch(bookId, query, jsonResults)
