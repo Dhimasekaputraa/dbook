@@ -235,6 +235,16 @@ fun ReaderScreen(
         }
     }
 
+    // Handle Jump to CFI when returning from Annotation Screen or Search
+    LaunchedEffect(initialCfiToJump) {
+        if (!initialCfiToJump.isNullOrEmpty()) {
+            Log.d("DBOOK_DEBUG", "LaunchedEffect triggered for CFI: $initialCfiToJump")
+            // Give a small delay to ensure WebView is fully rendered and ready for navigation
+            delay(500)
+            webViewRef?.evaluateJavascript("goToSearchResult('$initialCfiToJump', '$searchQueryToHighlight');", null)
+        }
+    }
+
     val spec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
     val animatedScale by animateFloatAsState(targetValue = if (isOverviewMode) 0.76f else 1.0f, animationSpec = spec, label = "")
     val animatedOffsetY by animateFloatAsState(targetValue = if (isOverviewMode) 6f else 0f, animationSpec = spec, label = "")
@@ -303,6 +313,8 @@ fun ReaderScreen(
     fun saveAnnotation(colorHex: String, noteText: String = "") {
         val currentSelection = pendingSelection ?: return
         val bookId = currentBook?.id ?: return
+
+        Log.d("DBOOK_DEBUG", "Saving annotation with CFI: ${currentSelection.cfi}")
 
         scope.launch(Dispatchers.IO) {
             val newAnnotation = Annotation(

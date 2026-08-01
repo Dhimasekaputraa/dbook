@@ -508,30 +508,29 @@
                 var range = sel.getRangeAt(0);
                 var rects = range.getClientRects();
                 
-                // Rect PERTAMA (Awal karakter seleksi)
                 var firstRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
-                // Rect TERAKHIR (Akhir karakter seleksi)
                 var lastRect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
 
                 var iframe = document.querySelector("#viewer iframe");
                 var iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
 
-                // X bertumpu pada awal karakter
                 var posX = iframeRect.left + firstRect.left;
-                
-                // Y1: Batas ATAS karakter pertama
                 var topY = iframeRect.top + firstRect.top;
-                // Y2: Batas BAWAH baris terakhir yang diblok
                 var bottomY = iframeRect.top + lastRect.bottom;
 
                 var cfi = "";
-                if (rendition && rendition.getRange) {
-                    var cfiRange = rendition.getRange(range);
-                    if (cfiRange) cfi = cfiRange.toString();
+                var contentsList = rendition.getContents();
+                if (contentsList && contentsList.length > 0) {
+                    var matchedContents = contentsList.find(function(c) {
+                        return c.document === doc;
+                    }) || contentsList[0];
+
+                    cfi = matchedContents.cfiFromRange(range);
                 }
 
-                // Kirim topY dan bottomY ke Kotlin
-                if (window.Android && window.Android.onTextSelectedWithPosition) {
+                console.log("[SELECTION_DEBUG] Generated CFI:", cfi);
+
+                if (window.Android && window.Android.onTextSelectedWithPosition && cfi) {
                     window.Android.onTextSelectedWithPosition(cfi, selectedText, posX, topY, bottomY);
                 }
             } catch (e) {
@@ -674,11 +673,17 @@
         }
 
         function applyHighlight(cfi, colorHex) {
-            rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
-                "fill": colorHex,
-                "fill-opacity": "0.35",
-                "mix-blend-mode": "multiply"
-            });
+            console.log("[HIGHLIGHT_DEBUG] Received CFI:", cfi);
+            try {
+                var result = rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
+                    "fill": colorHex,
+                    "fill-opacity": "0.35",
+                    "mix-blend-mode": "multiply"
+                });
+                console.log("[HIGHLIGHT_DEBUG] Highlight result:", result);
+            } catch (err) {
+                console.error("[HIGHLIGHT_DEBUG] Highlight failed:", err.message, err.stack);
+            }
             var iframe = document.querySelector("iframe");
             if (iframe && iframe.contentDocument) {
                 iframe.contentDocument.getSelection().removeAllRanges();
