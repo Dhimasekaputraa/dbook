@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,9 +68,11 @@ import com.dhimsea.dbook.core.utils.LocalBookServer
 import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.repository.BookRepository
+import com.dhimsea.dbook.ui.components.QuoteShareDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import org.json.JSONArray
 import java.net.URLEncoder
 
@@ -91,7 +94,8 @@ class ReaderBridge(
     private val onTextSelected: (String, String, Float, Float) -> Unit,
     private val onSelectionCleared: () -> Unit,
     private val onIndexingProgressUpdate: (Int) -> Unit,
-    private val onSearchFinished: (String) -> Unit
+    private val onSearchFinished: (String) -> Unit,
+    private val onOpenQuoteShare: (String, String, String) -> Unit
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -150,6 +154,13 @@ class ReaderBridge(
     fun onIndexingProgress(percent: Int) {
         mainHandler.post { onIndexingProgressUpdate(percent) }
     }
+
+    @JavascriptInterface
+    fun openQuoteShareDialog(quoteText: String, title: String, author: String) {
+        CoroutineScope(Dispatchers.Main).launch {
+            onOpenQuoteShare(quoteText, title, author)
+        }
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -194,6 +205,11 @@ fun ReaderScreen(
     var isSearchBarExpanded by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    var showQuoteShareDialog by remember { mutableStateOf(false) }
+    var quoteTextToShare by remember { mutableStateOf("") }
+    var bookTitleToShare by remember { mutableStateOf("") }
+    var bookAuthorToShare by remember { mutableStateOf("") }
 
     val presetColors = listOf(
         "#FFEB3B" to Color(0xFFFFEB3B), // Yellow
@@ -504,6 +520,12 @@ fun ReaderScreen(
                                         onNavigateToSearch(bookId, query, jsonResults)
                                     }
                                     pendingSearchQuery = null
+                                },
+                                onOpenQuoteShare = { quoteText, title, author ->
+                                    quoteTextToShare = quoteText
+                                    bookTitleToShare = title.ifBlank { currentBook?.title ?: "Unknown Title" }
+                                    bookAuthorToShare = author.ifBlank { currentBook?.author ?: "Unknown Author" }
+                                    showQuoteShareDialog = true
                                 }
                             ), "Android")
 
@@ -597,11 +619,11 @@ fun ReaderScreen(
             val pxY = (pendingSelection!!.posY * density).toInt()
 
             val popupWidthPx = (220 * density).toInt()
-            val popupHeightPx = (160 * density).toInt()
+            val popupHeightPx = (210 * density).toInt()
             val popupHalfWidthPx = popupWidthPx / 2
 
-            val marginOffsetPx = (16 * density).toInt()
-            val extraTopOffsetPx = (36 * density).toInt()
+            val marginOffsetPx = (20 * density).toInt()
+            val extraTopOffsetPx = (48 * density).toInt()
 
             val targetX = (pxX - popupHalfWidthPx).coerceIn(16, screenWidthPx - popupWidthPx - 16)
             val isSelectionInLowerHalf = pxY > (screenHeightPx / 2)
@@ -702,6 +724,32 @@ fun ReaderScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = "Search in Book",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    pendingSelection = null
+                                    // Trigger fungsi JavaScript untuk mengambil judul, author, dan teks yang di-select
+                                    webViewRef?.evaluateJavascript("triggerShareAsImage();", null)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share, // Impor Icons.Default.Share
+                                contentDescription = "Share as Image",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Share as Image",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -858,6 +906,15 @@ fun ReaderScreen(
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
                 }) { Text("Batal") }
             }
+        )
+    }
+
+    if (showQuoteShareDialog) {
+        QuoteShareDialog(
+            quoteText = quoteTextToShare,
+            bookTitle = bookTitleToShare,
+            bookAuthor = bookAuthorToShare,
+            onDismiss = { showQuoteShareDialog = false }
         )
     }
 }
