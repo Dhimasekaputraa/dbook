@@ -82,7 +82,8 @@ data class PendingSelection(
     val cfi: String,
     val text: String,
     val posX: Float,
-    val posY: Float
+    val posY: Float,
+    val bottomY: Float? = null
 )
 
 class ReaderBridge(
@@ -91,7 +92,7 @@ class ReaderBridge(
     private val onOpenOverview: () -> Unit,
     private val onCloseOverview: () -> Unit,
     private val onChaptersLoaded: (List<ChapterMarker>) -> Unit,
-    private val onTextSelected: (String, String, Float, Float) -> Unit,
+    private val onTextSelected: (String, String, Float, Float, Float) -> Unit,
     private val onSelectionCleared: () -> Unit,
     private val onIndexingProgressUpdate: (Int) -> Unit,
     private val onSearchFinished: (String) -> Unit,
@@ -136,8 +137,8 @@ class ReaderBridge(
     }
 
     @JavascriptInterface
-    fun onTextSelectedWithPosition(cfi: String, text: String, posX: Float, posY: Float) {
-        mainHandler.post { onTextSelected(cfi, text, posX, posY) }
+    fun onTextSelectedWithPosition(cfi: String, text: String, posX: Float, posY: Float, bottomY: Float) {
+        mainHandler.post { onTextSelected(cfi, text, posX, posY, bottomY) }
     }
 
     @JavascriptInterface
@@ -496,8 +497,8 @@ fun ReaderScreen(
                                 onOpenOverview = { isOverviewMode = true },
                                 onCloseOverview = { isOverviewMode = false },
                                 onChaptersLoaded = { chapterList -> chapters = chapterList },
-                                onTextSelected = { cfi, text, posX, posY ->
-                                    pendingSelection = PendingSelection(cfi, text, posX, posY)
+                                onTextSelected = { cfi, text, posX, posY, bottomY ->
+                                    pendingSelection = PendingSelection(cfi, text, posX, posY, bottomY)
                                 },
                                 onSelectionCleared = {
                                     pendingSelection = null
@@ -616,22 +617,45 @@ fun ReaderScreen(
             val screenHeightPx = (LocalConfiguration.current.screenHeightDp * density).toInt()
 
             val pxX = (pendingSelection!!.posX * density).toInt()
-            val pxY = (pendingSelection!!.posY * density).toInt()
+            val pxTopY = (pendingSelection!!.posY * density).toInt() // Posisi Atas (Karakter Pertama)
+            val pxBottomY = ((pendingSelection!!.bottomY ?: pendingSelection!!.posY) * density).toInt() // Posisi Bawah (Baris Terakhir)
 
             val popupWidthPx = (220 * density).toInt()
             val popupHeightPx = (210 * density).toInt()
-            val popupHalfWidthPx = popupWidthPx / 2
 
-            val marginOffsetPx = (20 * density).toInt()
-            val extraTopOffsetPx = (48 * density).toInt()
+            // Calculate total vertical height of the current selection
+            val selectionHeightPx = pxBottomY - pxTopY
 
-            val targetX = (pxX - popupHalfWidthPx).coerceIn(16, screenWidthPx - popupWidthPx - 16)
-            val isSelectionInLowerHalf = pxY > (screenHeightPx / 2)
+            // KONDISI KHUSUS: Cek apakah seleksi hampir memenuhi tinggi layar (misal > 50% dari tinggi layar)
+            // Atau jika batas atas dekat dengan tepi atas DAN batas bawah dekat dengan tepi bawah
+            val isFullPageSelection = selectionHeightPx > (screenHeightPx * 0.50f) || 
+                                     (pxTopY < (100 * density) && pxBottomY > screenHeightPx - (120 * density))
 
-            val targetY = if (isSelectionInLowerHalf) {
-                (pxY - popupHeightPx - marginOffsetPx - extraTopOffsetPx).coerceAtLeast(16)
+            val targetX: Int
+            val targetY: Int
+
+            if (isFullPageSelection) {
+                // Jika seleksi hampir menyeluruh satu layar, tempatkan Pop-up tepat di TENGAH LAYAR
+                targetX = (screenWidthPx - popupWidthPx) / 2
+                targetY = (screenHeightPx - popupHeightPx) / 2
             } else {
-                (pxY + marginOffsetPx).coerceAtMost(screenHeightPx - popupHeightPx - 16)
+                // Jarak aman agar popup tidak menutupi teks & gagang seleksi (blue handles)
+                val topGapOffsetPx = (52 * density).toInt()
+                val bottomGapOffsetPx = (24 * density).toInt()
+
+                // Posisikan Popup di atas karakter pertama dengan margin layar minimal 16px
+                targetX = (pxX - (16 * density).toInt()).coerceIn(16, screenWidthPx - popupWidthPx - 16)
+
+                // Cek apakah ada cukup ruang di ATAS karakter pertama
+                val hasSpaceOnTop = pxTopY - popupHeightPx - topGapOffsetPx > 0
+
+                targetY = if (hasSpaceOnTop) {
+                    // Jika muncul di ATAS: Bertumpu pada ATAS KARAKTER PERTAMA
+                    pxTopY - popupHeightPx - topGapOffsetPx
+                } else {
+                    // Jika muncul di BAWAH: Bertumpu pada BAWAH BARIS TERAKHIR yang diblok
+                    (pxBottomY + bottomGapOffsetPx).coerceAtMost(screenHeightPx - popupHeightPx - 16)
+                }
             }
 
             Popup(
@@ -639,13 +663,14 @@ fun ReaderScreen(
                 offset = IntOffset(x = targetX, y = targetY),
                 onDismissRequest = {
                     pendingSelection = null
-                    webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
                 },
-                properties = PopupProperties(focusable = true)
+                properties = PopupProperties(
+                    focusable = false
+                )
             ) {
                 Card(
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                 ) {
                     Column(
@@ -653,6 +678,7 @@ fun ReaderScreen(
                             .width(220.dp)
                             .padding(vertical = 8.dp)
                     ) {
+                        // Preset Colors
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -673,6 +699,7 @@ fun ReaderScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                        // Add Note
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -695,6 +722,7 @@ fun ReaderScreen(
                         
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                        // Search in Book
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -731,19 +759,19 @@ fun ReaderScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                        // Share as Image
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     pendingSelection = null
-                                    // Trigger fungsi JavaScript untuk mengambil judul, author, dan teks yang di-select
                                     webViewRef?.evaluateJavascript("triggerShareAsImage();", null)
                                 }
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Share, // Impor Icons.Default.Share
+                                imageVector = Icons.Default.Share,
                                 contentDescription = "Share as Image",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )

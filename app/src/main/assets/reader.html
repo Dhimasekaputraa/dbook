@@ -12,10 +12,16 @@
             margin: 0; padding: 0;
             overflow: hidden;
             transition: background-color 0.3s;
-            -webkit-user-select: text;
-            user-select: text;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            -webkit-touch-callout: none !important;
         }
-        #viewer { width: 100vw; height: 100vh; display: block; }
+        #viewer { 
+            width: 100vw; 
+            height: 100vh; 
+            display: block; 
+            overflow: hidden !important;
+        }
 
         .no-scroll {
             pointer-events: none !important;
@@ -36,6 +42,10 @@
             transform: translateX(30px);
             opacity: 0.3;
         }
+
+        ::selection {
+            background: rgba(33, 150, 243, 0.35) !important;
+        }
     </style>
 </head>
 <body>
@@ -52,6 +62,10 @@
         var bookIdParam = urlParams.get('bookId') || 'unknown';
         var currentFontSize = 18;
         var isOverviewActive = false;
+
+        // Variable global pengontrol dragging seleksi & popup
+        var isDraggingSelection = false;
+        var selectionDebounceTimer = null;
 
         function getLocationsCacheKey() {
             return "epub_location_" + bookIdParam + "_fs" + currentFontSize;
@@ -146,7 +160,6 @@
                     "margin": "0 !important",
                     "max-width": "100% !important",
                     "box-sizing": "border-box !important",
-                    "overflow": "hidden !important",
                     "font-family": "Georgia, Cambria, 'Times New Roman', Times, serif !important"
                 },
                 "p, div, span": { 
@@ -263,10 +276,10 @@
         }
 
         function safeNext() {
-            if (isOverviewActive) return;
+            if (isOverviewActive || isDraggingSelection) return;
 
             var iframe = document.querySelector("#viewer iframe");
-            if (iframe)iframe.classList.add("page-slide-next");
+            if (iframe) iframe.classList.add("page-slide-next");
 
             setTimeout(function() {
                 var loc = rendition.currentLocation();
@@ -280,15 +293,16 @@
                         }
                     }
                     if (iframe) iframe.classList.remove("page-slide-next");
-            }).catch(function() {
-                rendition.next();
-                if (iframe) iframe.classList.remove("page-slide-next");
+                }).catch(function() {
+                    rendition.next();
+                    if (iframe) iframe.classList.remove("page-slide-next");
                 });
             }, 100);
         }
 
         function safePrev() {
-            if (isOverviewActive) return;
+            if (isOverviewActive || isDraggingSelection) return;
+
             var loc = rendition.currentLocation();
             if (!loc || !loc.start) return;
 
@@ -296,38 +310,38 @@
             if (currentIndex === 0 && loc.atStart) return;
 
             var iframe = document.querySelector("#viewer iframe");
-            if (iframe) iframe.classList.add("page-slide-prev")
+            if (iframe) iframe.classList.add("page-slide-prev");
 
             setTimeout(function() {
                 rendition.prev().then(function() {
-                var newLoc = rendition.currentLocation();
-                if (newLoc && newLoc.start.cfi === loc.start.cfi) {
-                    if (currentIndex > 0) {
-                        var prevSpine = book.spine.get(currentIndex - 1);
-                        if (prevSpine) {
-                            var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
-                            var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
-                            var isRawImageOrSprite = mediaType.startsWith("image/") ||
-                                                     prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
-                                                     prevHref.includes("cvi") ||
-                                                     prevHref.includes("adc");
+                    var newLoc = rendition.currentLocation();
+                    if (newLoc && newLoc.start.cfi === loc.start.cfi) {
+                        if (currentIndex > 0) {
+                            var prevSpine = book.spine.get(currentIndex - 1);
+                            if (prevSpine) {
+                                var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
+                                var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
+                                var isRawImageOrSprite = mediaType.startsWith("image/") ||
+                                                         prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
+                                                         prevHref.includes("cvi") ||
+                                                         prevHref.includes("adc");
 
-                            if (!isRawImageOrSprite) {
-                                rendition.display(prevSpine.href);
+                                if (!isRawImageOrSprite) {
+                                    rendition.display(prevSpine.href);
+                                }
                             }
                         }
                     }
-                }
-                if (iframe) iframe.classList.remove("page-slide-prev");
-            }).catch(function() {
-                if (currentIndex > 0) {
-                    var prevSpine = book.spine.get(currentIndex - 1);
-                    if (prevSpine) rendition.display(prevSpine.href);
-                }
-                if (iframe) iframe.classList.remove("page-slide-prev");
-            });
-        }, 100)
-    }
+                    if (iframe) iframe.classList.remove("page-slide-prev");
+                }).catch(function() {
+                    if (currentIndex > 0) {
+                        var prevSpine = book.spine.get(currentIndex - 1);
+                        if (prevSpine) rendition.display(prevSpine.href);
+                    }
+                    if (iframe) iframe.classList.remove("page-slide-prev");
+                });
+            }, 100);
+        }
 
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
@@ -384,7 +398,7 @@
                 if (!isPinching && e.changedTouches.length === 1) {
                     touchEndX = e.changedTouches[0].screenX;
                     touchEndY = e.changedTouches[0].screenY;
-                    handleTapOrSwipe();
+                    handleTapOrSwipe(doc);
                 }
                 if (e.touches.length < 2) {
                     initialDistance = 0;
@@ -392,36 +406,21 @@
                 }
             }, {passive: false});
 
-            doc.addEventListener("selectionchange", function() {
-                var sel = doc.getSelection();
-                if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
-                    try {
-                        var selectedText = sel.toString().trim();
-                        var range = sel.getRangeAt(0);
-                        var cfi = contents.cfiFromRange(range);
-                        var rect = range.getBoundingClientRect();
-
-                        var iframe = document.querySelector("iframe");
-                        var iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
-
-                        var posX = iframeRect.left + rect.left + (rect.width / 2);
-                        var posY = iframeRect.top + rect.bottom;
-
-                        if (window.Android && cfi && window.Android.onTextSelectedWithPosition) {
-                            window.Android.onTextSelectedWithPosition(
-                                cfi, selectedText, posX, posY
-                            );
-                        }
-                    } catch(err) {}
-                } else {
-                    if (window.Android && window.Android.onSelectionCleared) {
-                        try { window.Android.onSelectionCleared(); } catch(e) {}
-                    }
-                }
-            });
+            // Mendaftarkan Listener Seleksi Teks Stabil
+            setupTextSelectionListener(doc);
         });
 
-        function handleTapOrSwipe() {
+        // HINDARI SWIPE JIKA USER SEDANG SELEKSI TEKS
+        function handleTapOrSwipe(doc) {
+            // Mencegah pemicu gesture halaman jika sedang memblok teks
+            if (isDraggingSelection) return;
+            if (doc) {
+                var sel = doc.getSelection();
+                if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                    return; // Abort tap/swipe saat teks terpilih
+                }
+            }
+
             var deltaX = touchEndX - touchStartX;
             var deltaY = touchEndY - touchStartY;
             var screenWidth = window.screen.width || window.innerWidth;
@@ -445,6 +444,98 @@
                 } else {
                     safePrev();
                 }
+            }
+        }
+
+        // PENGELOLA SELEKSI TEKS STABIL (TEKS TIDAK HILANG)
+        function setupTextSelectionListener(doc) {
+            if (!doc) return;
+
+            doc.addEventListener("pointerdown", function (e) {
+                var sel = doc.getSelection();
+                if (sel && !sel.isCollapsed) {
+                    isDraggingSelection = true;
+                    if (window.Android && window.Android.onSelectionCleared) {
+                        window.Android.onSelectionCleared();
+                    }
+                }
+            });
+
+            doc.addEventListener("pointermove", function (e) {
+                if (isDraggingSelection) {
+                    clearTimeout(selectionDebounceTimer);
+                }
+            });
+
+            doc.addEventListener("pointerup", handleSelectionEnd);
+            doc.addEventListener("touchend", handleSelectionEnd);
+
+            function handleSelectionEnd() {
+                clearTimeout(selectionDebounceTimer);
+                selectionDebounceTimer = setTimeout(function () {
+                    isDraggingSelection = false;
+                    processSelectedText(doc);
+                }, 180);
+            }
+
+            doc.addEventListener("selectionchange", function () {
+                var sel = doc.getSelection();
+
+                if (!sel || sel.isCollapsed || sel.toString().trim().length === 0) {
+                    if (window.Android && window.Android.onSelectionCleared) {
+                        window.Android.onSelectionCleared();
+                    }
+                    return;
+                }
+
+                if (!isDraggingSelection) {
+                    clearTimeout(selectionDebounceTimer);
+                    selectionDebounceTimer = setTimeout(function () {
+                        processSelectedText(doc);
+                    }, 200);
+                }
+            });
+        }
+
+        function processSelectedText(doc) {
+            var sel = doc.getSelection();
+            if (!sel || sel.isCollapsed) return;
+
+            var selectedText = sel.toString().trim();
+            if (selectedText.length === 0) return;
+
+            try {
+                var range = sel.getRangeAt(0);
+                var rects = range.getClientRects();
+                
+                // Rect PERTAMA (Awal karakter seleksi)
+                var firstRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+                // Rect TERAKHIR (Akhir karakter seleksi)
+                var lastRect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+
+                var iframe = document.querySelector("#viewer iframe");
+                var iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+
+                // X bertumpu pada awal karakter
+                var posX = iframeRect.left + firstRect.left;
+                
+                // Y1: Batas ATAS karakter pertama
+                var topY = iframeRect.top + firstRect.top;
+                // Y2: Batas BAWAH baris terakhir yang diblok
+                var bottomY = iframeRect.top + lastRect.bottom;
+
+                var cfi = "";
+                if (rendition && rendition.getRange) {
+                    var cfiRange = rendition.getRange(range);
+                    if (cfiRange) cfi = cfiRange.toString();
+                }
+
+                // Kirim topY dan bottomY ke Kotlin
+                if (window.Android && window.Android.onTextSelectedWithPosition) {
+                    window.Android.onTextSelectedWithPosition(cfi, selectedText, posX, topY, bottomY);
+                }
+            } catch (e) {
+                console.error("Error processing text selection:", e);
             }
         }
 
@@ -490,19 +581,14 @@
                             var lowerFull = fullChapterText.toLowerCase();
                             var lowerQuery = query.trim().toLowerCase();
 
-                            // Cari indeks query berikutnya di bab ini
                             var matchIdx = lowerFull.indexOf(lowerQuery, lastSearchIdx);
 
                             if (matchIdx !== -1) {
-                                // Kuota seimbang di kiri & kanan agar query selalu di TENGAH
                                 var padding = 110; 
 
-                                // --- 1. HITUNG BATAS DEPAN (START) ---
                                 var rawStart = Math.max(0, matchIdx - padding);
                                 var start = rawStart;
 
-                                // Jika ini hasil pencarian lanjutan pada bab yang sama,
-                                // mulailah dari setelah lokasi query sebelumnya
                                 if (lastSearchIdx > 0 && lastSearchIdx < matchIdx) {
                                     var periodAfterPrevious = lowerFull.indexOf('.', lastSearchIdx);
                                     if (periodAfterPrevious !== -1 && periodAfterPrevious < matchIdx && periodAfterPrevious > rawStart) {
@@ -515,16 +601,13 @@
                                     start = (spaceIdx !== -1 && spaceIdx < matchIdx) ? spaceIdx + 1 : rawStart;
                                 }
 
-                                // Update lokasi kursor untuk hasil berikutnya
                                 lastSearchIdx = matchIdx + lowerQuery.length;
 
-                                // --- 2. HITUNG BATAS BELAKANG (END) ---
                                 var rawEnd = Math.min(fullChapterText.length, matchIdx + lowerQuery.length + padding);
                                 var end = rawEnd;
 
                                 var nextMatchIdx = lowerFull.indexOf(lowerQuery, lastSearchIdx);
 
-                                // Jika ada query lain di dekatnya, potong di titik sebelum query tersebut
                                 if (nextMatchIdx !== -1 && nextMatchIdx < rawEnd) {
                                     var periodBeforeNext = lowerFull.lastIndexOf('.', nextMatchIdx);
                                     if (periodBeforeNext !== -1 && periodBeforeNext > matchIdx) {
@@ -533,7 +616,6 @@
                                         end = nextMatchIdx;
                                     }
                                 } else if (rawEnd < fullChapterText.length) {
-                                    // Jika dekat dengan titik akhir kalimat, potong di titik tersebut
                                     var periodAfterMatch = fullChapterText.indexOf('.', matchIdx + lowerQuery.length);
                                     if (periodAfterMatch !== -1 && periodAfterMatch <= rawEnd) {
                                         end = periodAfterMatch + 1;
@@ -543,7 +625,6 @@
                                     }
                                 }
 
-                                // --- 3. EKSTRAKSI TEKS ---
                                 richExcerpt = fullChapterText.substring(start, end).trim();
 
                                 if (start > 0) richExcerpt = '...' + richExcerpt;
@@ -553,7 +634,6 @@
                             }
                         }
 
-                        // Fallback
                         if (!richExcerpt) {
                             richExcerpt = res.excerpt ? res.excerpt.trim() : query;
                         }
@@ -586,25 +666,6 @@
                     window.Android.onSearchResultsLoaded(JSON.stringify([]));
                 }
             });
-        }
-
-        function createLongerExcerpt(fullText, matchQuery, padding = 120) {
-            if (!fullText || !matchQuery) return fullText || "";
-
-            const index = fullText.toLowerCase().indexOf(matchQuery.toLowerCase());
-            if (index === -1) {
-                return fullText.substring(0, padding * 2) + '...';
-            }
-
-            const start = Math.max(0, index - padding);
-            const end = Math.min(fullText.length, index + matchQuery.length + padding);
-
-            let snippet = fullText.substring(start, end);
-
-            if (start > 0) snippet = '...' + snippet;
-            if (end < fullText.length) snippet = snippet + '...';
-
-            return snippet;
         }
 
         function goToPercent(percent) {
@@ -648,14 +709,9 @@
             rendition.display(cfi).then(function() {
                 setTimeout(function() {
                     resetIframeScroll();
-
-                    // 1. Bersihkan highlight lama
                     clearSearchHighlight();
-
-                    // 2. Coba highlight via API Bawaan ePub.js
                     applySearchHighlight(cfi);
 
-                    // 3. Coba highlight spesifik paragraf CFI lewat DOM
                     if (searchText) {
                         highlightSpecificCfiText(cfi, searchText);
                     }
@@ -688,12 +744,7 @@
                 var iframe = document.querySelector("#viewer iframe");
                 if (iframe && iframe.contentWindow) {
                     iframe.contentWindow.scrollTo(0, 0);
-                    if (iframe.contentDocument && iframe.contentDocument.documentElement) {
-                        iframe.contentDocument.documentElement.scrollLeft = 0;
-                        iframe.contentDocument.body.scrollLeft = 0;
-                    }
                 }
-                rendition.resize();
             } catch(e) {}
         }
 
@@ -739,7 +790,6 @@
                     }
                 }
 
-                // Hanya bungkus match PERTAMA di dalam node target CFI tersebut
                 if (nodesToReplace.length > 0) {
                     var node = nodesToReplace[0];
                     var parent = node.parentNode;
@@ -749,7 +799,7 @@
 
                     var matchFound = false;
                     val.replace(regex, function(match, p1, offset) {
-                        if (matchFound) return; // Hanya highlight instance pertama
+                        if (matchFound) return;
 
                         if (offset > lastIndex) {
                             fragment.appendChild(doc.createTextNode(val.substring(lastIndex, offset)));
