@@ -67,6 +67,34 @@
         var isDraggingSelection = false;
         var selectionDebounceTimer = null;
 
+        var scrollSnapTimer = null;
+
+    function attachContainerScrollWatcher() {
+        try {
+            var manager = rendition.manager;
+            if (!manager || !manager.container) {
+                // container belum siap, coba lagi sedikit nanti
+                setTimeout(attachContainerScrollWatcher, 300);
+                return;
+            }
+
+            manager.container.addEventListener("scroll", function() {
+                console.log("[OVERFLOW_DEBUG] scroll event, scrollLeft:", manager.container.scrollLeft);
+
+                clearTimeout(scrollSnapTimer);
+                scrollSnapTimer = setTimeout(function() {
+                    snapContainerToPage();
+                }, 150); // tunggu scroll berhenti dulu
+            }, { passive: true });
+
+            console.log("[OVERFLOW_DEBUG] Container scroll watcher attached");
+        } catch(e) {
+            console.log("[OVERFLOW_DEBUG] attachContainerScrollWatcher error:", e);
+        }
+    }
+
+    attachContainerScrollWatcher();
+
         function getLocationsCacheKey() {
             return "epub_location_" + bookIdParam + "_fs" + currentFontSize;
         }
@@ -198,6 +226,7 @@
         book.ready.then(function() {
             return loadOrGenerateLocations();
         }).then(function() {
+            attachContainerScrollWatcher();
             var chapterList = [];
             
             try {
@@ -452,6 +481,7 @@
             if (!doc) return;
 
             doc.addEventListener("pointerdown", function (e) {
+                logContainerState("pointerdown");
                 var sel = doc.getSelection();
                 if (sel && !sel.isCollapsed) {
                     isDraggingSelection = true;
@@ -463,6 +493,7 @@
 
             doc.addEventListener("pointermove", function (e) {
                 if (isDraggingSelection) {
+                    logContainerState("pointermove (dragging)");
                     clearTimeout(selectionDebounceTimer);
                 }
             });
@@ -471,10 +502,12 @@
             doc.addEventListener("touchend", handleSelectionEnd);
 
             function handleSelectionEnd() {
+                logContainerState("selection end (before)")
                 clearTimeout(selectionDebounceTimer);
                 selectionDebounceTimer = setTimeout(function () {
                     isDraggingSelection = false;
                     processSelectedText(doc);
+                    logContainerState("selection end (after)")
                 }, 180);
             }
 
@@ -495,6 +528,28 @@
                     }, 200);
                 }
             });
+        }
+
+        function snapContainerToPage() {
+            try {
+                var manager = rendition.manager;
+                if (!manager || !manager.container || !manager.layout) return;
+                if (isOverviewActive) return; // jangan ganggu saat overview mode
+
+                var container = manager.container;
+                var delta = manager.layout.delta;
+                if (!delta) return;
+
+                var current = container.scrollLeft;
+                var snapped = Math.round(current / delta) * delta;
+
+                if (Math.abs(current - snapped) > 2) {
+                    console.log("[OVERFLOW_DEBUG] Drift detected. Snapping scrollLeft:", current, "->", snapped);
+                    container.scrollLeft = snapped;
+                }
+            } catch(e) {
+                console.log("[OVERFLOW_DEBUG] snap error:", e);
+            }
         }
 
         function processSelectedText(doc) {
@@ -896,6 +951,22 @@
                 clearSearchHighlight();
             }
         });
+
+        function logContainerState(label) {
+            try {
+                var manager = rendition.manager;
+                if (manager && manager.container) {
+                    console.log("[OVERFLOW_DEBUG]", label,
+                        "scrollLeft:", manager.container.scrollLeft,
+                        "scrollWidth:", manager.container.scrollWidth,
+                        "clientWidth:", manager.container.clientWidth,
+                        "delta:", manager.layout ? manager.layout.delta : "n/a"
+                    );
+                }
+            } catch(e) {
+                console.log("[OVERFLOW_DEBUG] logContainerState error:", e);
+            }
+        }
     </script>
 </body>
 </html>
