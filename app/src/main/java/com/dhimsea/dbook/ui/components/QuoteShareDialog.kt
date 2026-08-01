@@ -29,6 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.dhimsea.dbook.R
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.res.painterResource
 import com.dhimsea.dbook.core.utils.ImageShareUtils
 import kotlinx.coroutines.launch
 
@@ -196,6 +200,7 @@ fun QuoteCardContent(
     textColor: Color,
     subTextColor: Color
 ) {
+    val isDarkMode = isSystemInDarkTheme()
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -220,7 +225,7 @@ fun QuoteCardContent(
             )
 
             Text(
-                text = "oleh $bookAuthor",
+                text = "by $bookAuthor",
                 style = MaterialTheme.typography.labelSmall,
                 color = subTextColor.copy(alpha = 0.8f),
                 fontStyle = FontStyle.Italic,
@@ -229,7 +234,6 @@ fun QuoteCardContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Isi Quote
             Text(
                 text = "“$quoteText”",
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -243,12 +247,6 @@ fun QuoteCardContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Watermark Aplikasi
-            Text(
-                text = "— DBook Reader",
-                style = MaterialTheme.typography.labelSmall,
-                color = subTextColor.copy(alpha = 0.6f)
-            )
         }
     }
 }

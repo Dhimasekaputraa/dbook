@@ -64,6 +64,9 @@ dependencies {
     // Material Icons Extended
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
 
+    // Splashscreen
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     // Navigation Compose
     implementation(libs.androidx.navigation.compose)
 

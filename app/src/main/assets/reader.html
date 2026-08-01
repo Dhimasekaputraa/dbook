@@ -73,7 +73,7 @@
         try {
             var manager = rendition.manager;
             if (!manager || !manager.container) {
-                // container belum siap, coba lagi sedikit nanti
+
                 setTimeout(attachContainerScrollWatcher, 300);
                 return;
             }
@@ -84,7 +84,7 @@
                 clearTimeout(scrollSnapTimer);
                 scrollSnapTimer = setTimeout(function() {
                     snapContainerToPage();
-                }, 150); // tunggu scroll berhenti dulu
+                }, 150);
             }, { passive: true });
 
             console.log("[OVERFLOW_DEBUG] Container scroll watcher attached");
@@ -435,18 +435,16 @@
                 }
             }, {passive: false});
 
-            // Mendaftarkan Listener Seleksi Teks Stabil
             setupTextSelectionListener(doc);
         });
 
-        // HINDARI SWIPE JIKA USER SEDANG SELEKSI TEKS
         function handleTapOrSwipe(doc) {
-            // Mencegah pemicu gesture halaman jika sedang memblok teks
+
             if (isDraggingSelection) return;
             if (doc) {
                 var sel = doc.getSelection();
                 if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
-                    return; // Abort tap/swipe saat teks terpilih
+                    return;
                 }
             }
 
@@ -476,7 +474,6 @@
             }
         }
 
-        // PENGELOLA SELEKSI TEKS STABIL (TEKS TIDAK HILANG)
         function setupTextSelectionListener(doc) {
             if (!doc) return;
 
@@ -534,7 +531,7 @@
             try {
                 var manager = rendition.manager;
                 if (!manager || !manager.container || !manager.layout) return;
-                if (isOverviewActive) return; // jangan ganggu saat overview mode
+                if (isOverviewActive) return;
 
                 var container = manager.container;
                 var delta = manager.layout.delta;
@@ -593,7 +590,6 @@
             }
         }
 
-        // --- FUNGSI PENCARIAN TEKS EPUB (STABIL: CENTER ANCHOR) ---
         function searchInBook(query) {
             if (!query) return;
 
