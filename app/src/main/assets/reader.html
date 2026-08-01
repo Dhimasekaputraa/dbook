@@ -21,6 +21,21 @@
             pointer-events: none !important;
             touch-action: none !important;
         }
+
+        #viewer iframe {
+            transition: transform 0.22s ease-out, opacity 0.25s ease-out;
+            will-change: transform, opacity;
+        }
+
+        .page-slide-next {
+            transform: translateX(-30px);
+            opacity: 0.3;
+        }
+
+        .page-slide-prev {
+            transform: translateX(30px);
+            opacity: 0.3;
+        }
     </style>
 </head>
 <body>
@@ -243,19 +258,27 @@
 
         function safeNext() {
             if (isOverviewActive) return;
-            var loc = rendition.currentLocation();
-            rendition.next().then(function() {
-                var newLoc = rendition.currentLocation();
-                if (loc && newLoc && loc.start.cfi === newLoc.start.cfi) {
-                    var currentIndex = loc.start.index;
-                    if (currentIndex < book.spine.length - 1) {
-                        var nextSpine = book.spine.get(currentIndex + 1);
-                        if (nextSpine) rendition.display(nextSpine.href);
+
+            var iframe = document.querySelector("#viewer iframe");
+            if (iframe)iframe.classList.add("page-slide-next");
+
+            setTimeout(function() {
+                var loc = rendition.currentLocation();
+                rendition.next().then(function() {
+                    var newLoc = rendition.currentLocation();
+                    if (loc && newLoc && loc.start.cfi === newLoc.start.cfi) {
+                        var currentIndex = loc.start.index;
+                        if (currentIndex < book.spine.length - 1) {
+                            var nextSpine = book.spine.get(currentIndex + 1);
+                            if (nextSpine) rendition.display(nextSpine.href);
+                        }
                     }
-                }
+                    if (iframe) iframe.classList.remove("page-slide-next");
             }).catch(function() {
                 rendition.next();
-            });
+                if (iframe) iframe.classList.remove("page-slide-next");
+                });
+            }, 100);
         }
 
         function safePrev() {
@@ -266,7 +289,11 @@
             var currentIndex = loc.start.index;
             if (currentIndex === 0 && loc.atStart) return;
 
-            rendition.prev().then(function() {
+            var iframe = document.querySelector("#viewer iframe");
+            if (iframe) iframe.classList.add("page-slide-prev")
+
+            setTimeout(function() {
+                rendition.prev().then(function() {
                 var newLoc = rendition.currentLocation();
                 if (newLoc && newLoc.start.cfi === loc.start.cfi) {
                     if (currentIndex > 0) {
@@ -285,13 +312,16 @@
                         }
                     }
                 }
+                if (iframe) iframe.classList.remove("page-slide-prev");
             }).catch(function() {
                 if (currentIndex > 0) {
                     var prevSpine = book.spine.get(currentIndex - 1);
                     if (prevSpine) rendition.display(prevSpine.href);
                 }
+                if (iframe) iframe.classList.remove("page-slide-prev");
             });
-        }
+        }, 100)
+    }
 
         var touchStartX = 0, touchStartY = 0;
         var touchEndX = 0, touchEndY = 0;
