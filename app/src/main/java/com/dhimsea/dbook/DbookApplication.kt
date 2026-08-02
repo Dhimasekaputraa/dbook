@@ -7,7 +7,7 @@ import com.dhimsea.dbook.data.repository.BookRepositoryImpl
 import com.dhimsea.dbook.domain.repository.BookRepository
 
 class DbookApplication : Application() {
-//    instance database (lazy initialization)
+
     private val database by lazy {
         Room.databaseBuilder(
             this,

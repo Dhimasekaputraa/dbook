@@ -17,7 +17,6 @@ class SearchViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    // Dipanggil ketika JavaScript Bridge mengirimkan string JSON hasil pencarian
     fun parseSearchResults(jsonResults: String) {
         viewModelScope.launch {
             try {

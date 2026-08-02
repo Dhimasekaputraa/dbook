@@ -91,7 +91,7 @@ fun AnnotationScreen(
             }
         }
 
-        // --- DIALOG SHARE ANNOTATION (QUOTE SHARE DIALOG) ---
+        // --- Pop up share annotation ---
         selectedAnnotationForShare?.let { annotation ->
             QuoteShareDialog(
                 quoteText = annotation.text,
@@ -101,7 +101,7 @@ fun AnnotationScreen(
             )
         }
 
-        // --- MODAL DIALOG HAPUS ANOTASI ---
+        // --- Pop up delete annotation ---
         selectedAnnotationForDelete?.let { annotation ->
             AlertDialog(
                 onDismissRequest = { selectedAnnotationForDelete = null },
@@ -136,7 +136,6 @@ fun AnnotationItemCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    // Parse warna dari hex string
     val tagColor = remember(annotation.colorHex) {
         try {
             Color(android.graphics.Color.parseColor(annotation.colorHex))
@@ -166,7 +165,7 @@ fun AnnotationItemCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Simbol Warna Anotasi (Circle Dot)
+                    
                     Box(
                         modifier = Modifier
                             .size(12.dp)
@@ -175,7 +174,7 @@ fun AnnotationItemCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "${annotation.chapterName} • Hal. ${annotation.pageNumber}",
+                        text = "${annotation.chapterName} • Page: ${annotation.pageNumber}",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -184,7 +183,7 @@ fun AnnotationItemCard(
                     )
                 }
 
-                // Tombol Opsi Titik Tiga dengan Anchored DropdownMenu
+                // option for annotations
                 Box {
                     IconButton(
                         onClick = { showMenu = true },
@@ -235,7 +234,7 @@ fun AnnotationItemCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Teks yang ditandai / di-highlight
+            // Annotation Text
             Text(
                 text = "“${annotation.text}”",
                 style = MaterialTheme.typography.bodyMedium,
@@ -245,7 +244,7 @@ fun AnnotationItemCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Catatan / Komentar Tambahan pengguna (jika ada)
+            // Annotation Note
             if (annotation.note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))

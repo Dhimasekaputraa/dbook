@@ -34,14 +34,14 @@ object ImageShareUtils {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            val chooser = Intent.createChooser(shareIntent, "Bagikan Quote via").apply {
+            val chooser = Intent.createChooser(shareIntent, "Share Image via").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
             context.startActivity(chooser)
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(context, "Gagal membagikan quote: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Failed to share image: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
     }
 }

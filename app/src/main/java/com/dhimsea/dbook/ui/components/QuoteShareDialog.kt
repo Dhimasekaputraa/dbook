@@ -62,7 +62,6 @@ fun QuoteShareDialog(
         QuoteThemeOption.MATERIAL_DYNAMIC -> Triple(primaryContainer, onPrimaryContainer, onPrimaryContainer.copy(alpha = 0.7f))
     }
 
-    // GraphicsLayer khusus HANYA untuk membungkus Kartu Quote
     val graphicsLayer = rememberGraphicsLayer()
 
     Dialog(
@@ -84,20 +83,19 @@ fun QuoteShareDialog(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Pratinjau Gambar",
+                    text = "Image Preview",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- HANYA KARTU INI YANG DIMASUKKAN KE GRAPHICS LAYER ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .wrapContentHeight()
                         .drawWithContent {
-                            // Rekam render konten kartu ini saja ke layer
+                            
                             graphicsLayer.record {
                                 this@drawWithContent.drawContent()
                             }
@@ -116,9 +114,9 @@ fun QuoteShareDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // --- PILIHAN WARNA TEMA ---
+                // --- Color Theme ---
                 Text(
-                    text = "Pilih Warna Tema",
+                    text = "Choose Color Theme",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -153,7 +151,7 @@ fun QuoteShareDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // --- TOMBOL AKSI: BATAL & BAGIKAN ---
+                
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -163,14 +161,14 @@ fun QuoteShareDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Batal")
+                        Text("Cancel")
                     }
 
                     Button(
                         onClick = {
                             scope.launch {
                                 try {
-                                    // Ekstrak Bitmap HANYA dari graphicsLayer Kartu Quote
+                                   
                                     val imageBitmap = graphicsLayer.toImageBitmap()
                                     val androidBitmap = imageBitmap.asAndroidBitmap()
                                     ImageShareUtils.shareBitmap(context, androidBitmap)
@@ -183,7 +181,7 @@ fun QuoteShareDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Bagikan")
+                        Text("Share")
                     }
                 }
             }
@@ -213,7 +211,7 @@ fun QuoteCardContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Header: Judul & Penulis
+            
             Text(
                 text = bookTitle.uppercase(),
                 style = MaterialTheme.typography.labelMedium.copy(

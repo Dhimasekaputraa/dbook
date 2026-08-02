@@ -27,8 +27,6 @@ class LocalBookServer(
         if (uri == "/book.epub") {
             val path = bookPath ?: return notFoundResponse()
             
-            // Karena LibraryViewModel selalu menyimpan ke internal storage (absolutePath),
-            // kita bisa langsung membacanya sebagai File biasa.
             val file = File(path)
             if (file.exists()) {
                 try {
@@ -37,10 +35,10 @@ class LocalBookServer(
                         Response.Status.OK,
                         "application/epub+zip",
                         inputStream,
-                        file.length() // Sangat krusial agar JSZip mengetahui ukuran asli file
+                        file.length()
                     ).apply {
                         addHeader("Access-Control-Allow-Origin", "*")
-                        addHeader("Accept-Ranges", "bytes") // Membantu epub.js melakukan partial load
+                        addHeader("Accept-Ranges", "bytes")
                     }
                 } catch (e: Exception) {
                     Log.e("LocalBookServer", "Error opening book file: ${e.message}")

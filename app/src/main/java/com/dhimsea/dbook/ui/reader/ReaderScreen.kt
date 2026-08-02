@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -362,14 +363,14 @@ fun ReaderScreen(
                     }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Tutup Pencarian",
+                            contentDescription = "Close search",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     OutlinedTextField(
                         value = searchText,
                         onValueChange = { searchText = it },
-                        placeholder = { Text("Cari dalam buku...") },
+                        placeholder = { Text("Search in book...") },
                         singleLine = true,
                         modifier = Modifier
                             .weight(1f)
@@ -379,7 +380,7 @@ fun ReaderScreen(
                                 IconButton(onClick = { searchText = "" }) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
-                                        contentDescription = "Bersihkan"
+                                        contentDescription = "Clear"
                                     )
                                 }
                             }
@@ -395,7 +396,7 @@ fun ReaderScreen(
                     IconButton(onClick = { executeSearch(searchText) }) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Cari",
+                            contentDescription = "Search",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -421,7 +422,7 @@ fun ReaderScreen(
                     IconButton(onClick = { isSearchBarExpanded = true }) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Cari dalam Buku",
+                            contentDescription = "Search in book",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -629,8 +630,8 @@ fun ReaderScreen(
             val screenHeightPx = (LocalConfiguration.current.screenHeightDp * density).toInt()
 
             val pxX = (pendingSelection!!.posX * density).toInt()
-            val pxTopY = (pendingSelection!!.posY * density).toInt() // Posisi Atas (Karakter Pertama)
-            val pxBottomY = ((pendingSelection!!.bottomY ?: pendingSelection!!.posY) * density).toInt() // Posisi Bawah (Baris Terakhir)
+            val pxTopY = (pendingSelection!!.posY * density).toInt()
+            val pxBottomY = ((pendingSelection!!.bottomY ?: pendingSelection!!.posY) * density).toInt()
 
             val popupWidthPx = (220 * density).toInt()
             val popupHeightPx = (210 * density).toInt()
@@ -638,8 +639,6 @@ fun ReaderScreen(
             // Calculate total vertical height of the current selection
             val selectionHeightPx = pxBottomY - pxTopY
 
-            // KONDISI KHUSUS: Cek apakah seleksi hampir memenuhi tinggi layar (misal > 50% dari tinggi layar)
-            // Atau jika batas atas dekat dengan tepi atas DAN batas bawah dekat dengan tepi bawah
             val isFullPageSelection = selectionHeightPx > (screenHeightPx * 0.50f) || 
                                      (pxTopY < (100 * density) && pxBottomY > screenHeightPx - (120 * density))
 
@@ -647,25 +646,20 @@ fun ReaderScreen(
             val targetY: Int
 
             if (isFullPageSelection) {
-                // Jika seleksi hampir menyeluruh satu layar, tempatkan Pop-up tepat di TENGAH LAYAR
                 targetX = (screenWidthPx - popupWidthPx) / 2
                 targetY = (screenHeightPx - popupHeightPx) / 2
             } else {
-                // Jarak aman agar popup tidak menutupi teks & gagang seleksi (blue handles)
                 val topGapOffsetPx = (52 * density).toInt()
                 val bottomGapOffsetPx = (24 * density).toInt()
 
-                // Posisikan Popup di atas karakter pertama dengan margin layar minimal 16px
                 targetX = (pxX - (16 * density).toInt()).coerceIn(16, screenWidthPx - popupWidthPx - 16)
 
-                // Cek apakah ada cukup ruang di ATAS karakter pertama
                 val hasSpaceOnTop = pxTopY - popupHeightPx - topGapOffsetPx > 0
 
                 targetY = if (hasSpaceOnTop) {
-                    // Jika muncul di ATAS: Bertumpu pada ATAS KARAKTER PERTAMA
+
                     pxTopY - popupHeightPx - topGapOffsetPx
-                } else {
-                    // Jika muncul di BAWAH: Bertumpu pada BAWAH BARIS TERAKHIR yang diblok
+                } else {                    
                     (pxBottomY + bottomGapOffsetPx).coerceAtMost(screenHeightPx - popupHeightPx - 16)
                 }
             }
@@ -878,7 +872,7 @@ fun ReaderScreen(
                 pendingSelection = null
                 webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
             },
-            title = { Text("Tambah Catatan") },
+            title = { Text("Add note") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -892,14 +886,14 @@ fun ReaderScreen(
                     OutlinedTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        label = { Text("Tuliskan Catatan...") },
+                        label = { Text("Write a note here") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3
                     )
 
                     Column {
                         Text(
-                            text = "Pilih Warna Highlight:",
+                            text = "Select highlight color:",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -937,14 +931,14 @@ fun ReaderScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { saveAnnotation(selectedColorHex, noteInput) }) { Text("Simpan") }
+                TextButton(onClick = { saveAnnotation(selectedColorHex, noteInput) }) { Text("Save") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showNoteDialog = false
                     pendingSelection = null
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
-                }) { Text("Batal") }
+                }) { Text("Cancel") }
             }
         )
     }
@@ -993,33 +987,29 @@ fun IndexingLoadingScreen(
             }
 
             if (isIndexing && progress > 0) {
-                LinearProgressIndicator(
+                CircularProgressIndicator(
                     progress = { progress / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
+                    modifier = Modifier.size(36.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    strokeWidth = 4.dp
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Menyiapkan buku... $progress%",
+                    text = "Preparing your Book... $progress%",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
+                CircularProgressIndicator(
+                    modifier = Modifier.size(36.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    strokeWidth = 4.dp
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Memuat buku...",
+                    text = "Just a moment...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

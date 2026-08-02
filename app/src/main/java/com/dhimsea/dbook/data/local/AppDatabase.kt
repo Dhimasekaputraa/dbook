@@ -12,7 +12,7 @@ import com.dhimsea.dbook.data.local.entity.AnnotationEntity
 @Database(
     entities = [
         BookEntity::class, 
-        AnnotationEntity::class // <--- 1. Wajib ditambahkan di sini
+        AnnotationEntity::class
     ],
     version = 5,                   
     exportSchema = false

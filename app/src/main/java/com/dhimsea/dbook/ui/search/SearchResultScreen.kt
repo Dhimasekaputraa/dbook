@@ -33,13 +33,13 @@ fun SearchResultsScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Pencarian: \"$queryText\"",
+                            text = "Search Result: \"$queryText\"",
                             style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1, // KEMBALIKAN KE 1 AGAR HEADER RAPI
+                            maxLines = 1, 
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = if (isLoading) "Mencari..." else "${searchResults.size} hasil ditemukan",
+                            text = if (isLoading) "Searching..." else "${searchResults.size} results found",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -65,7 +65,7 @@ fun SearchResultsScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else if (searchResults.isEmpty()) {
                 Text(
-                    text = "Tidak ada hasil yang ditemukan.",
+                    text = "Result not found.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center)
@@ -117,7 +117,7 @@ fun SearchResultCard(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "Hal. ${result.page}",
+                    text = "Page: ${result.page}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -125,7 +125,7 @@ fun SearchResultCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Highlight keyword pada teks excerpt
+            // Highlight keyword
             val annotatedExcerpt = buildAnnotatedString {
                 val text = result.excerpt
                 val lowerText = text.lowercase()
