@@ -6,24 +6,38 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Book as BookIcon
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,20 +46,71 @@ import coil.compose.AsyncImage
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.collectLatest
 
+enum class SortOption(val displayName: String) {
+    DATE_ADDED("Date Added"),
+    NAME("Name"),
+    LAST_READ("Last Read")
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Book) -> Unit,
-    onAnnotationClick: (Book) -> Unit,
-    onBookDetailClick: (Book) -> Unit
+    onAnnotationClick: (Book) -> Unit
 ) {
     val context = LocalContext.current
     val books by viewModel.books.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // --- SEARCH & LAYOUT STATE ---
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var isGridView by remember { mutableStateOf(true) }
+
+    // --- SORTING STATE ---
+    var selectedSortOption by remember { mutableStateOf(SortOption.DATE_ADDED) }
+    var isAscending by remember { mutableStateOf(false) }
+    var showSortDropdown by remember { mutableStateOf(false) }
+
+    // State Dialog & Deletion / Finishing
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
+    var bookToFinish by remember { mutableStateOf<Book?>(null) }
+
+    // Filter Continue Reading (Hanya buku yang memiliki progres > 0%)
+    val continueReadingBooks = remember(books) {
+        books.filter { book -> book.progressPercentage > 0f }
+            .sortedByDescending { it.lastReadAt }
+    }
+
+    // Filter & Sort Seluruh Buku Perpustakaan
+    val processedBooks = remember(searchQuery, books, selectedSortOption, isAscending) {
+        var result = if (searchQuery.isBlank()) {
+            books
+        } else {
+            books.filter { book ->
+                book.title.contains(searchQuery, ignoreCase = true) ||
+                book.author.contains(searchQuery, ignoreCase = true)
+            }
+        }
+
+        result = when (selectedSortOption) {
+            SortOption.DATE_ADDED -> if (isAscending) result.sortedBy { it.addedAt } else result.sortedByDescending { it.addedAt }
+            SortOption.NAME -> if (isAscending) result.sortedBy { it.title.lowercase() } else result.sortedByDescending { it.title.lowercase() }
+            SortOption.LAST_READ -> if (isAscending) result.sortedBy { it.lastReadAt } else result.sortedByDescending { it.lastReadAt }
+        }
+
+        result
+    }
+
+    val filteredBooksForSearch = remember(searchQuery, books) {
+        if (searchQuery.isBlank()) emptyList()
+        else books.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.author.contains(searchQuery, ignoreCase = true)
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -79,13 +144,146 @@ fun LibraryScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("My Library") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.primary
-                )
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            ) {
+                // 1. SEARCHBAR
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (isSearchActive) 0.dp else 16.dp)
+                ) {
+                    SearchBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onSearch = { isSearchActive = false },
+                        active = isSearchActive,
+                        onActiveChange = { isSearchActive = it },
+                        placeholder = { Text("Search Title or Author...") },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        when {
+                            searchQuery.isBlank() -> { }
+                            filteredBooksForSearch.isEmpty() -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Book not found.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            else -> {
+                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                    items(filteredBooksForSearch, key = { it.id }) { book ->
+                                        ListItem(
+                                            headlineContent = {
+                                                Text(text = book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            },
+                                            supportingContent = {
+                                                Text(text = book.author, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            },
+                                            leadingContent = {
+                                                Icon(
+                                                    imageVector = Icons.Default.BookIcon,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            },
+                                            modifier = Modifier.clickable {
+                                                isSearchActive = false
+                                                onBookClick(book)
+                                            }
+                                        )
+                                        HorizontalDivider()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. ACTION BAR (SORTING DROPDOWN & TOGGLE BUTTON)
+                if (!isSearchActive) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                TextButton(onClick = { showSortDropdown = true }) {
+                                    Text(
+                                        text = "Sort: ${selectedSortOption.displayName}",
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showSortDropdown,
+                                    onDismissRequest = { showSortDropdown = false }
+                                ) {
+                                    SortOption.entries.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    RadioButton(
+                                                        selected = (selectedSortOption == option),
+                                                        onClick = null
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(option.displayName)
+                                                }
+                                            },
+                                            onClick = {
+                                                selectedSortOption = option
+                                                showSortDropdown = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { isAscending = !isAscending },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                    contentDescription = "Sort Direction",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = { isGridView = !isGridView }) {
+                            Icon(
+                                imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
+                                contentDescription = "Toggle Grid/List View"
+                            )
+                        }
+                    }
+                }
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -104,45 +302,142 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (books.isEmpty()) {
+            if (processedBooks.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Belum ada buku.\nTekan + untuk menambah buku.",
+                        text = if (searchQuery.isNotEmpty())
+                            "No Books Match \"$searchQuery\""
+                        else
+                            "No books have been added yet.\nPress + to add books.",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 120.dp),
-                    contentPadding = PaddingValues(16.dp),
+                LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(books, key = { it.id }) { book ->
-                        BookCard(
-                            book = book,
-                            onClick = { onBookClick(book) },
-                            onDelete = { bookToDelete = (book) },
-                            onAnnotations = { onAnnotationClick(book) },
-                            onDetail = { onBookDetailClick(book) }
+                    // --- SECTION CONTINUE READING ---
+                    if (searchQuery.isBlank() && continueReadingBooks.isNotEmpty()) {
+                        item {
+                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                Text(
+                                    text = "Continue Reading",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    items(continueReadingBooks, key = { "continue_${it.id}" }) { book ->
+                                        LargeContinueReadingCard(
+                                            book = book,
+                                            onClick = { onBookClick(book) },
+                                            onDelete = { bookToDelete = book },
+                                            onAnnotations = { onAnnotationClick(book) },
+                                            onToggleFinish = { bookToFinish = book }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            }
+                        }
+                    }
+
+                    // --- SECTION HEADER PERPUSTAKAAN ---
+                    item {
+                        Text(
+                            text = if (searchQuery.isNotBlank()) "Search Results" else "All Books",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
+                    }
+
+                    // --- DAFTAR BUKU (GRID / LIST) ---
+                    if (isGridView) {
+                        item {
+                            val gridHeight = calculateGridHeight(processedBooks.size)
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 120.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(gridHeight),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                userScrollEnabled = false
+                            ) {
+                                items(processedBooks, key = { it.id }) { book ->
+                                    BookItemCard(
+                                        book = book,
+                                        onClick = { onBookClick(book) },
+                                        onDelete = { bookToDelete = book },
+                                        onAnnotations = { onAnnotationClick(book) },
+                                        onToggleFinish = { bookToFinish = book }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(processedBooks, key = { it.id }) { book ->
+                            BookItemListRow(
+                                book = book,
+                                onClick = { onBookClick(book) },
+                                onDelete = { bookToDelete = book },
+                                onAnnotations = { onAnnotationClick(book) },
+                                onToggleFinish = { bookToFinish = book }
+                            )
+                        }
                     }
                 }
             }
         }
     }
+
+    // --- DIALOG KONFIRMASI MARK AS FINISHED ---
+    bookToFinish?.let { book ->
+        AlertDialog(
+            onDismissRequest = { bookToFinish = null },
+            title = { Text("Mark as Finished") },
+            text = {
+                Text("Are you sure you want to mark \"${book.title}\" as finished? This will reset your current progress.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.markBookAsFinished(book)
+                        bookToFinish = null
+                    }
+                ) {
+                    Text("Mark as finished")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToFinish = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // --- DIALOG KONFIRMASI HAPUS BUKU ---
     bookToDelete?.let { book ->
         AlertDialog(
             onDismissRequest = { bookToDelete = null },
-            title = { Text("Hapus Buku") },
-            text = { 
-                Text("Apakah kamu yakin ingin menghapus \"${book.title}\"? Data buku akan dihapus secara permanen.") 
+            title = { Text("Delete Book") },
+            text = {
+                Text("Are you sure want to delete \"${book.title}\"? The book and it's data will be deleted.")
             },
             confirmButton = {
                 TextButton(
@@ -154,26 +449,125 @@ fun LibraryScreen(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Hapus")
+                    Text("Delete")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { bookToDelete = null }) {
-                    Text("Batal")
+                    Text("Cancel")
                 }
             }
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+// --- CARD BESAR CONTINUE READING ---
 @Composable
-fun BookCard(
+fun LargeContinueReadingCard(
     book: Book,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onAnnotations: () -> Unit,
-    onDetail: () -> Unit
+    onToggleFinish: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val progressPercent = (book.progressPercentage * 100).toInt()
+
+    Column(
+        modifier = Modifier
+            .width(170.dp)
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)
+                .clip(RoundedCornerShape(8.dp))
+        ) {
+            if (!book.coverPath.isNullOrEmpty()) {
+                AsyncImage(
+                    model = book.coverPath,
+                    contentDescription = book.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BookIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "$progressPercent% completed",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                BookDropdownMenu(
+                    showMenu = showMenu,
+                    onDismiss = { showMenu = false },
+                    onClick = onClick,
+                    onAnnotations = onAnnotations,
+                    onDelete = onDelete,
+                    onToggleFinish = onToggleFinish,
+                    showMarkAsFinished = book.progressPercentage > 0f || book.lastReadPage > 0
+                )
+            }
+        }
+    }
+}
+
+// --- COMPOSABLE CARD UNTUK GRID BUKU ---
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BookItemCard(
+    book: Book,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onAnnotations: () -> Unit,
+    onToggleFinish: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -239,49 +633,162 @@ fun BookCard(
             }
         }
 
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text("Open") },
-                onClick = {
-                    showMenu = false
-                    onClick()
-                },
-                leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
-            )
-            DropdownMenuItem(
-                text = { Text("My Annotations") },
-                onClick = {
-                    showMenu = false
-                    onAnnotations()
-                },
-                leadingIcon = { Icon(Icons.Default.Bookmark, contentDescription = null) }
-            )
-            DropdownMenuItem(
-                text = { Text("View Book Detail") },
-                onClick = {
-                    showMenu = false
-                    onDetail()
-                },
-                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
-            )
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                onClick = {
-                    showMenu = false
-                    onDelete()
-                },
-                leadingIcon = { 
-                    Icon(
-                        Icons.Default.Delete, 
+        BookDropdownMenu(
+            showMenu = showMenu,
+            onDismiss = { showMenu = false },
+            onClick = onClick,
+            onAnnotations = onAnnotations,
+            onDelete = onDelete,
+            onToggleFinish = onToggleFinish,
+            showMarkAsFinished = book.progressPercentage > 0f || book.lastReadPage > 0
+        )
+    }
+}
+
+// --- COMPOSABLE TAMPILAN LIST BARIS ---
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BookItemListRow(
+    book: Book,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onAnnotations: () -> Unit,
+    onToggleFinish: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            supportingContent = {
+                Text(
+                    text = book.author,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            leadingContent = {
+                if (!book.coverPath.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = book.coverPath,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    ) 
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 40.dp, height = 56.dp)
+                            .clip(MaterialTheme.shapes.extraSmall)
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier.size(width = 40.dp, height = 56.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.BookIcon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                )
+        )
+
+        BookDropdownMenu(
+            showMenu = showMenu,
+            onDismiss = { showMenu = false },
+            onClick = onClick,
+            onAnnotations = onAnnotations,
+            onDelete = onDelete,
+            onToggleFinish = onToggleFinish,
+            showMarkAsFinished = book.progressPercentage > 0f || book.lastReadPage > 0
+        )
+    }
+}
+
+// --- DROPDOWN MENU DENGAN LOGIKA VISIBILITAS MARK AS FINISHED ---
+@Composable
+fun BookDropdownMenu(
+    showMenu: Boolean,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit,
+    onAnnotations: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleFinish: () -> Unit,
+    showMarkAsFinished: Boolean
+) {
+    DropdownMenu(
+        expanded = showMenu,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = { Text("Open") },
+            onClick = {
+                onDismiss()
+                onClick()
+            },
+            leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
+        )
+
+        // Hanya tampilkan jika buku memiliki progres (> 0)
+        if (showMarkAsFinished) {
+            DropdownMenuItem(
+                text = { Text("Mark as Finished") },
+                onClick = {
+                    onDismiss()
+                    onToggleFinish()
+                },
+                leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null) }
             )
         }
+
+        DropdownMenuItem(
+            text = { Text("My Annotations") },
+            onClick = {
+                onDismiss()
+                onAnnotations()
+            },
+            leadingIcon = { Icon(Icons.Default.Bookmark, contentDescription = null) }
+        )
+
+        HorizontalDivider()
+
+        DropdownMenuItem(
+            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+            onClick = {
+                onDismiss()
+                onDelete()
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        )
     }
+}
+
+@Composable
+private fun calculateGridHeight(itemCount: Int): androidx.compose.ui.unit.Dp {
+    val rows = (itemCount + 1) / 2
+    return (rows * 220).dp
 }

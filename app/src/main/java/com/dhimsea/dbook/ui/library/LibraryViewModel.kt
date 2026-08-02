@@ -18,6 +18,7 @@ import com.dhimsea.dbook.domain.repository.BookRepository
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -26,7 +27,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 
 class LibraryViewModel(
     private val bookRepository: BookRepository,
@@ -141,7 +141,7 @@ class LibraryViewModel(
             val bookTitle = metadata.title?.takeIf { it.isNotBlank() }
                 ?: fileName.substringBeforeLast(".")
             
-            if ( fileSize > 0 && bookRepository.isBookExists(bookTitle, fileSize)) {
+            if (fileSize > 0 && bookRepository.isBookExists(bookTitle, fileSize)) {
                 return false
             }
 
@@ -172,6 +172,18 @@ class LibraryViewModel(
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    // --- FUNGSI RESET MARK AS FINISHED ---
+    fun markBookAsFinished(book: Book) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val resetBook = book.copy(
+                progressPercentage = 0f,
+                lastReadPage = 0,
+                lastReadCfi = null
+            )
+            bookRepository.updateBook(resetBook) // Sesuaikan dengan nama fungsi update di repository milikmu
         }
     }
 
