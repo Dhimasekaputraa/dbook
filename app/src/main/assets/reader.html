@@ -227,6 +227,7 @@
             return loadOrGenerateLocations();
         }).then(function() {
             attachContainerScrollWatcher();
+            patchManagerNextTolerance(); 
             var chapterList = [];
             
             try {
@@ -302,6 +303,39 @@
 
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
+        }
+
+        function patchManagerNextTolerance() {
+            var manager = rendition.manager;
+            if (!manager || typeof manager.next !== "function") {
+                setTimeout(patchManagerNextTolerance, 300);
+                return;
+            }
+            if (manager.__nextPatched) return;
+            manager.__nextPatched = true;
+
+            var originalNext = manager.next.bind(manager);
+            manager.next = function() {
+                try {
+                    if (this.isPaginated && this.settings.axis === "horizontal" &&
+                        (!this.settings.direction || this.settings.direction === "ltr")) {
+                        var EPSILON = 2;
+                        var wouldFit = this.container.scrollLeft + this.container.offsetWidth + this.layout.delta
+                            <= this.container.scrollWidth + EPSILON;
+                        if (wouldFit) {
+                            console.log("[NEXT_PATCH] Forcing scrollBy, deficit:",
+                                (this.container.scrollLeft + this.container.offsetWidth + this.layout.delta) - this.container.scrollWidth);
+                            this.scrollBy(this.layout.delta, 0, true);
+                            return Promise.resolve();
+                        }
+                    }
+                } catch (e) {
+                    console.log("[NEXT_PATCH] error, fallback ke next() asli:", e);
+                }
+                return originalNext();
+            };
+
+            console.log("[NEXT_PATCH] manager.next() berhasil dipatch dengan toleransi epsilon");
         }
 
         function safeNext() {
