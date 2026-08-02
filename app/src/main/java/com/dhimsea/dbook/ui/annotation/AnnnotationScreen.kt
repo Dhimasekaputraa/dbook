@@ -9,7 +9,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,24 +23,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dhimsea.dbook.domain.model.Annotation
+import com.dhimsea.dbook.ui.components.QuoteShareDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnnotationScreen(
     bookTitle: String,
+    bookAuthor: String = "Unknown Author", // Opsional: Berikan nama penulis jika ada
     annotations: List<Annotation>,
     onAnnotationClick: (Annotation) -> Unit,
     onDeleteAnnotation: (Annotation) -> Unit,
     onBack: () -> Unit
 ) {
     var selectedAnnotationForDelete by remember { mutableStateOf<Annotation?>(null) }
+    var selectedAnnotationForShare by remember { mutableStateOf<Annotation?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Anotasi: $bookTitle",
+                        text = "Annotation: $bookTitle",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -47,7 +52,7 @@ fun AnnotationScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Kembali"
+                            contentDescription = "Back"
                         )
                     }
                 }
@@ -62,7 +67,7 @@ fun AnnotationScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Belum ada anotasi atau catatan.",
+                    text = "There are no annotations or notes yet.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -79,18 +84,29 @@ fun AnnotationScreen(
                     AnnotationItemCard(
                         annotation = annotation,
                         onClick = { onAnnotationClick(annotation) },
-                        onMoreClick = { selectedAnnotationForDelete = annotation }
+                        onShareClick = { selectedAnnotationForShare = annotation },
+                        onDeleteClick = { selectedAnnotationForDelete = annotation }
                     )
                 }
             }
         }
 
-        // Modal Dialog Hapus Anotasi
+        // --- DIALOG SHARE ANNOTATION (QUOTE SHARE DIALOG) ---
+        selectedAnnotationForShare?.let { annotation ->
+            QuoteShareDialog(
+                quoteText = annotation.text,
+                bookTitle = bookTitle,
+                bookAuthor = bookAuthor,
+                onDismiss = { selectedAnnotationForShare = null }
+            )
+        }
+
+        // --- MODAL DIALOG HAPUS ANOTASI ---
         selectedAnnotationForDelete?.let { annotation ->
             AlertDialog(
                 onDismissRequest = { selectedAnnotationForDelete = null },
-                title = { Text("Hapus Anotasi") },
-                text = { Text("Apakah Anda yakin ingin menghapus anotasi ini?") },
+                title = { Text("Delete Annotation") },
+                text = { Text("Are you sure you want to delete this annotation?") },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -98,12 +114,12 @@ fun AnnotationScreen(
                             selectedAnnotationForDelete = null
                         }
                     ) {
-                        Text("Hapus", color = MaterialTheme.colorScheme.error)
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { selectedAnnotationForDelete = null }) {
-                        Text("Batal")
+                        Text("Cancel")
                     }
                 }
             )
@@ -115,8 +131,11 @@ fun AnnotationScreen(
 fun AnnotationItemCard(
     annotation: Annotation,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onShareClick: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     // Parse warna dari hex string
     val tagColor = remember(annotation.colorHex) {
         try {
@@ -165,15 +184,52 @@ fun AnnotationItemCard(
                     )
                 }
 
-                IconButton(
-                    onClick = onMoreClick,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Opsi",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Tombol Opsi Titik Tiga dengan Anchored DropdownMenu
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Opsi",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Share Annotation") },
+                            onClick = {
+                                showMenu = false
+                                onShareClick()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = null
+                                )
+                            }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                showMenu = false
+                                onDeleteClick()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        )
+                    }
                 }
             }
 

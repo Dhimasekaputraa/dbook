@@ -5,10 +5,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -16,12 +17,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dhimsea.dbook.core.designsystem.DbookTheme
+import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.ui.annotation.AnnotationScreen
 import com.dhimsea.dbook.ui.annotation.AnnotationViewModel
 import com.dhimsea.dbook.ui.annotation.AnnotationViewModelFactory
-import com.dhimsea.dbook.ui.bookdetail.BookDetailScreen
-import com.dhimsea.dbook.ui.bookdetail.BookDetailViewModel
-import com.dhimsea.dbook.ui.bookdetail.BookDetailViewModelFactory
 import com.dhimsea.dbook.ui.library.LibraryScreen
 import com.dhimsea.dbook.ui.library.LibraryViewModel
 import com.dhimsea.dbook.ui.library.LibraryViewModelFactory
@@ -32,7 +31,6 @@ import com.dhimsea.dbook.ui.search.SearchViewModel
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,12 +68,7 @@ class MainActivity : ComponentActivity() {
                                 navController.navigate(Screen.Reader.createRoute(encodedPath))
                             },
                             onAnnotationClick = { book ->
-                                val encodedTitle = URLEncoder.encode(book.title, StandardCharsets.UTF_8.toString())
-                                val encodedPath = URLEncoder.encode(book.filePath, StandardCharsets.UTF_8.toString())
-                                navController.navigate("annotation/${book.id}/$encodedTitle/$encodedPath")
-                            },
-                            onBookDetailClick = { book ->
-                                navController.navigate("book_detail/${book.id}")
+                                navController.navigate("annotation/${book.id}")
                             }
                         )
                     }
@@ -108,10 +101,7 @@ class MainActivity : ComponentActivity() {
                             searchQueryToHighlight = searchQuery,
                             bookRepository = app.bookRepository,
                             onOpenAnnotationScreen = { bookId ->
-                                val title = "Buku"
-                                val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-                                val encodedPath = URLEncoder.encode(decodedPath, StandardCharsets.UTF_8.toString())
-                                navController.navigate("annotation/$bookId/$encodedTitle/$encodedPath")
+                                navController.navigate("annotation/$bookId")
                             },
                             onNavigateToSearch = { bookId, queryText, resultsJson ->
                                 val encodedQuery = URLEncoder.encode(queryText, StandardCharsets.UTF_8.toString())
@@ -125,7 +115,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // --- SEARCH RESULTS SCREEN (ROUTE BARU) ---
+                    // --- SEARCH RESULTS SCREEN ---
                     composable(
                         route = "search_results/{bookId}/{queryText}/{filePath}",
                         arguments = listOf(
@@ -183,104 +173,42 @@ class MainActivity : ComponentActivity() {
                     
                     // --- ANNOTATION SCREEN ---
                     composable(
-                        route = "annotation/{bookId}/{bookTitle}/{filePath}",
+                        route = "annotation/{bookId}",
                         arguments = listOf(
-                            navArgument("bookId") { type = NavType.LongType },
-                            navArgument("bookTitle") { type = NavType.StringType },
-                            navArgument("filePath") { type = NavType.StringType }
+                            navArgument("bookId") { type = NavType.LongType }
                         ),
-                        enterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
-                            )
-                        },
-                        exitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(250)
-                            )
-                        },
-                        popEnterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(300)
-                            )
-                        },
-                        popExitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(250)
-                            )
-                        }
+                        enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+                        exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(250)) },
+                        popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) },
+                        popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(250)) }
                     ) { backStackEntry ->
                         val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
-                        val rawTitle = backStackEntry.arguments?.getString("bookTitle") ?: "Buku"
-                        val bookTitle = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
 
-                        val rawFilePath = backStackEntry.arguments?.getString("filePath") ?: ""
-                        val decodedFilePath = URLDecoder.decode(rawFilePath, StandardCharsets.UTF_8.toString())
+                        LaunchedEffect(bookId) {
+                            annotationViewModel.loadBook(bookId)
+                        }
 
-                        val annotations by annotationViewModel.getAnnotationsForBook(bookId).collectAsState(initial = emptyList())
+                        val currentBook by annotationViewModel.book.collectAsState()
+                        val annotations by annotationViewModel.getAnnotationsForBook(bookId)
+                            .collectAsState(initial = emptyList<com.dhimsea.dbook.domain.model.Annotation>())
 
                         AnnotationScreen(
-                            bookTitle = bookTitle,
+                            bookTitle = currentBook?.title ?: "Annotation",
+                            bookAuthor = currentBook?.author ?: "Unknown Author",
                             annotations = annotations,
                             onAnnotationClick = { annotation ->
-                                val encodedPath = URLEncoder.encode(decodedFilePath, StandardCharsets.UTF_8.toString())
-                                navController.navigate(Screen.Reader.createRoute(encodedPath)) {
-                                    popUpTo(Screen.Library.route)
+                                currentBook?.filePath?.let { filePath ->
+                                    val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
+                                    navController.navigate(Screen.Reader.createRoute(encodedPath)) {
+                                        popUpTo(Screen.Library.route)
+                                    }
+                                    navController.currentBackStackEntry
+                                        ?.savedStateHandle
+                                        ?.set("targetCfi", annotation.cfi)
                                 }
-                                navController.currentBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("targetCfi", annotation.cfi)
                             },
                             onDeleteAnnotation = { annotation ->
                                 annotationViewModel.deleteAnnotation(annotation)
-                            },
-                            onBack = { navController.popBackStack() }
-                        )
-                    }
-
-                    // --- BOOK DETAIL SCREEN ---
-                    composable(
-                        route = "book_detail/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
-                        enterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Left,
-                                animationSpec = tween(300)
-                            )
-                        },
-                        exitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(250)
-                            )
-                        },
-                        popEnterTransition = {
-                            slideIntoContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(300)
-                            )
-                        },
-                        popExitTransition = {
-                            slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Right,
-                                animationSpec = tween(250)
-                            )
-                        }
-                    ) { backStackEntry ->
-                        val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
-                        
-                        val factory = BookDetailViewModelFactory(app.bookRepository, bookId)
-                        val viewModel: BookDetailViewModel = viewModel(factory = factory)
-
-                        BookDetailScreen(
-                            viewModel = viewModel,
-                            onReadClick = { filePath ->
-                                val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
-                                navController.navigate(Screen.Reader.createRoute(encodedPath))
                             },
                             onBack = { navController.popBackStack() }
                         )
