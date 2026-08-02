@@ -35,6 +35,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,27 +65,27 @@ fun LibraryScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // --- SEARCH & LAYOUT STATE ---
+    // --- OBSERVE STATE PERSISTEN DARI VIEWMODEL ---
+    val isGridView by viewModel.isGridView.collectAsState()
+    val selectedSortOption by viewModel.selectedSortOption.collectAsState()
+    val isAscending by viewModel.isAscending.collectAsState()
+
+    // --- SEARCH & LOCAL UI STATE ---
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var isGridView by remember { mutableStateOf(true) }
-
-    // --- SORTING STATE ---
-    var selectedSortOption by remember { mutableStateOf(SortOption.DATE_ADDED) }
-    var isAscending by remember { mutableStateOf(false) }
     var showSortDropdown by remember { mutableStateOf(false) }
 
     // State Dialog & Deletion / Finishing
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToFinish by remember { mutableStateOf<Book?>(null) }
 
-    // Filter Continue Reading (Hanya buku yang memiliki progres > 0%)
+    // Filter Continue Reading
     val continueReadingBooks = remember(books) {
         books.filter { book -> book.progressPercentage > 0f }
             .sortedByDescending { it.lastReadAt }
     }
 
-    // Filter & Sort Seluruh Buku Perpustakaan
+    // Filter & Sort All books
     val processedBooks = remember(searchQuery, books, selectedSortOption, isAscending) {
         var result = if (searchQuery.isBlank()) {
             books
@@ -161,7 +162,7 @@ fun LibraryScreen(
                         onSearch = { isSearchActive = false },
                         active = isSearchActive,
                         onActiveChange = { isSearchActive = it },
-                        placeholder = { Text("Search Title or Author...") },
+                        placeholder = { Text("Search Book Title or Author...") },
                         leadingIcon = {
                             Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
                         },
@@ -172,6 +173,9 @@ fun LibraryScreen(
                                 }
                             }
                         },
+                        colors = SearchBarDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         when {
@@ -191,28 +195,63 @@ fun LibraryScreen(
                                 }
                             }
                             else -> {
-                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
                                     items(filteredBooksForSearch, key = { it.id }) { book ->
                                         ListItem(
                                             headlineContent = {
-                                                Text(text = book.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            },
-                                            supportingContent = {
-                                                Text(text = book.author, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            },
-                                            leadingContent = {
-                                                Icon(
-                                                    imageVector = Icons.Default.BookIcon,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary
+                                                Text(
+                                                    text = book.title,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    fontWeight = FontWeight.Medium
                                                 )
                                             },
+                                            supportingContent = {
+                                                Text(
+                                                    text = book.author,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            },
+                                            leadingContent = {
+                                                if (!book.coverPath.isNullOrEmpty()) {
+                                                    AsyncImage(
+                                                        model = book.coverPath,
+                                                        contentDescription = null,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier
+                                                            .size(width = 36.dp, height = 48.dp)
+                                                            .clip(MaterialTheme.shapes.extraSmall)
+                                                    )
+                                                } else {
+                                                    Surface(
+                                                        modifier = Modifier.size(width = 36.dp, height = 48.dp),
+                                                        shape = MaterialTheme.shapes.extraSmall,
+                                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.BookIcon,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            colors = ListItemDefaults.colors(
+                                                containerColor = Color.Transparent
+                                            ),
                                             modifier = Modifier.clickable {
                                                 isSearchActive = false
                                                 onBookClick(book)
                                             }
                                         )
-                                        HorizontalDivider()
                                     }
                                 }
                             }
@@ -233,7 +272,7 @@ fun LibraryScreen(
                             Box {
                                 TextButton(onClick = { showSortDropdown = true }) {
                                     Text(
-                                        text = "Sort: ${selectedSortOption.displayName}",
+                                        text = selectedSortOption.displayName,
                                         style = MaterialTheme.typography.labelLarge
                                     )
                                 }
@@ -255,7 +294,7 @@ fun LibraryScreen(
                                                 }
                                             },
                                             onClick = {
-                                                selectedSortOption = option
+                                                viewModel.setSortOption(option)
                                                 showSortDropdown = false
                                             }
                                         )
@@ -264,7 +303,7 @@ fun LibraryScreen(
                             }
 
                             IconButton(
-                                onClick = { isAscending = !isAscending },
+                                onClick = { viewModel.toggleSortDirection() },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -275,7 +314,7 @@ fun LibraryScreen(
                             }
                         }
 
-                        IconButton(onClick = { isGridView = !isGridView }) {
+                        IconButton(onClick = { viewModel.toggleGridView() }) {
                             Icon(
                                 imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
                                 contentDescription = "Toggle Grid/List View"
@@ -286,12 +325,14 @@ fun LibraryScreen(
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Books")
+            if (!isSearchActive) {
+                FloatingActionButton(
+                    onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Books")
+                }
             }
         }
     ) { paddingValues ->
@@ -405,13 +446,13 @@ fun LibraryScreen(
         }
     }
 
-    // --- DIALOG KONFIRMASI MARK AS FINISHED ---
+    // --- Mark as finished Confirmation ---
     bookToFinish?.let { book ->
         AlertDialog(
             onDismissRequest = { bookToFinish = null },
-            title = { Text("Mark as Finished") },
+            title = { Text("Mark as Finished?") },
             text = {
-                Text("Are you sure you want to mark \"${book.title}\" as finished? This will reset your current progress.")
+                Text("Mark \"${book.title}\" as finished? This action will reset you current progress")
             },
             confirmButton = {
                 TextButton(
@@ -431,13 +472,13 @@ fun LibraryScreen(
         )
     }
 
-    // --- DIALOG KONFIRMASI HAPUS BUKU ---
+    // --- Delete book confirmation ---
     bookToDelete?.let { book ->
         AlertDialog(
             onDismissRequest = { bookToDelete = null },
-            title = { Text("Delete Book") },
+            title = { Text("Delete Book?") },
             text = {
-                Text("Are you sure want to delete \"${book.title}\"? The book and it's data will be deleted.")
+                Text("Are you sure you want to delete \"${book.title}\"? This action will permanently remove the book and all its data.")
             },
             confirmButton = {
                 TextButton(
@@ -461,7 +502,7 @@ fun LibraryScreen(
     }
 }
 
-// --- CARD BESAR CONTINUE READING ---
+// --- CONTINUE READING Section ---
 @Composable
 fun LargeContinueReadingCard(
     book: Book,
@@ -723,7 +764,7 @@ fun BookItemListRow(
     }
 }
 
-// --- DROPDOWN MENU DENGAN LOGIKA VISIBILITAS MARK AS FINISHED ---
+// --- DROPDOWN MENU ---
 @Composable
 fun BookDropdownMenu(
     showMenu: Boolean,
@@ -747,7 +788,6 @@ fun BookDropdownMenu(
             leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
         )
 
-        // Hanya tampilkan jika buku memiliki progres (> 0)
         if (showMarkAsFinished) {
             DropdownMenuItem(
                 text = { Text("Mark as Finished") },

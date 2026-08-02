@@ -33,6 +33,19 @@ class LibraryViewModel(
     private val context: Context
 ) : ViewModel() {
 
+    private val prefs = context.getSharedPreferences("library_settings", Context.MODE_PRIVATE)
+
+    private val _isGridView = MutableStateFlow(prefs.getBoolean("is_grid_view", true))
+    val isGridView: StateFlow<Boolean> = _isGridView
+
+    private val _selectedSortOption = MutableStateFlow(
+        SortOption.valueOf(prefs.getString("sort_option", SortOption.DATE_ADDED.name) ?: SortOption.DATE_ADDED.name)
+    )
+    val selectedSortOption: StateFlow<SortOption> = _selectedSortOption
+
+    private val _isAscending = MutableStateFlow(prefs.getBoolean("is_ascending", false))
+    val isAscending: StateFlow<Boolean> = _isAscending
+
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val CHANNEL_ID = "import_progress_channel"
@@ -62,7 +75,7 @@ class LibraryViewModel(
                 "Import Book Progress",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Menampilkan progress saat mengimpor buku"
+                description = "Display progress for importing book"
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -86,14 +99,14 @@ class LibraryViewModel(
 
             val notifBuilder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("Mengimpor Buku")
+                .setContentTitle("Importing Books")
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
 
             uris.forEachIndexed { index, uri ->
                 val current = index + 1
                 if (canShowNotification) {
-                    notifBuilder.setContentText("Proses $current dari $total buku...")
+                    notifBuilder.setContentText("Processing $current from $total books")
                     notifBuilder.setProgress(total, current, false)
                     try {
                         notificationManager.notify(NOTIF_ID, notifBuilder.build())
@@ -108,8 +121,8 @@ class LibraryViewModel(
 
             if (canShowNotification) {
                 notifBuilder.setSmallIcon(android.R.drawable.stat_sys_download_done)
-                    .setContentTitle("Import Selesai")
-                    .setContentText("Berhasil: $successCount, Gagal: $failCount")
+                    .setContentTitle("Import Finished")
+                    .setContentText("Success: $successCount, Failed: $failCount")
                     .setProgress(0, 0, false)
                     .setOngoing(false)
                 try {
@@ -122,12 +135,29 @@ class LibraryViewModel(
             _isScanning.value = false
 
             val resultMessage = when {
-                successCount > 0 && failCount == 0 -> "Berhasil mengimpor $successCount buku."
-                successCount > 0 && failCount > 0 -> "$successCount buku berhasil diimport, $failCount gagal/duplikat."
-                else -> "Import gagal. Tidak ada buku baru yang ditambahkan."
+                successCount > 0 && failCount == 0 -> "Successfully imported $successCount books."
+                successCount > 0 && failCount > 0 -> "$successCount books successfully imported, $failCount failed (duplicate)."
+                else -> "Import Failed. No new books were added."
             }
             _uiMessage.emit(resultMessage)
         }
+    }
+
+    fun toggleGridView() {
+        val newValue = !_isGridView.value
+        _isGridView.value = newValue
+        prefs.edit().putBoolean("is_grid_view", newValue).apply()
+    }
+
+    fun setSortOption(option: SortOption) {
+        _selectedSortOption.value = option
+        prefs.edit().putString("sort_option", option.name).apply()
+    }
+
+    fun toggleSortDirection() {
+        val newValue = !_isAscending.value
+        _isAscending.value = newValue
+        prefs.edit().putBoolean("is_ascending", newValue).apply()
     }
 
     private suspend fun processSingleUri(uri: Uri): Boolean {
@@ -175,7 +205,7 @@ class LibraryViewModel(
         }
     }
 
-    // --- FUNGSI RESET MARK AS FINISHED ---
+    // --- MARK AS FINISHED ---
     fun markBookAsFinished(book: Book) {
         viewModelScope.launch(Dispatchers.IO) {
             val resetBook = book.copy(
@@ -183,7 +213,7 @@ class LibraryViewModel(
                 lastReadPage = 0,
                 lastReadCfi = null
             )
-            bookRepository.updateBook(resetBook) // Sesuaikan dengan nama fungsi update di repository milikmu
+            bookRepository.updateBook(resetBook)
         }
     }
 
