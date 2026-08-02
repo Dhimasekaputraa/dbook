@@ -69,31 +69,67 @@
 
         var scrollSnapTimer = null;
 
-    function attachContainerScrollWatcher() {
-        try {
-            var manager = rendition.manager;
-            if (!manager || !manager.container) {
+        // Variable pengunci seleksi teks
+        var isSelectingText = false;
+        var lockedScrollLeft = 0;
 
-                setTimeout(attachContainerScrollWatcher, 300);
-                return;
+        // --- FUNGSI MENGHITUNG POSISI SCROLL KELIPATAN HALAMAN SECARA DINAMIS ---
+        function getSnappedScrollLeft() {
+            try {
+                var manager = rendition.manager;
+                if (manager && manager.container) {
+                    var container = manager.container;
+                    var current = container.scrollLeft;
+                    
+                    var delta = (manager.layout && manager.layout.delta > 0) 
+                                ? manager.layout.delta 
+                                : container.clientWidth;
+
+                    if (delta > 0) {
+                        return Math.round(current / delta) * delta;
+                    }
+                }
+            } catch(e) {
+                console.log("[OVERFLOW_DEBUG] getSnappedScrollLeft error:", e);
             }
-
-            manager.container.addEventListener("scroll", function() {
-                console.log("[OVERFLOW_DEBUG] scroll event, scrollLeft:", manager.container.scrollLeft);
-
-                clearTimeout(scrollSnapTimer);
-                scrollSnapTimer = setTimeout(function() {
-                    snapContainerToPage();
-                }, 150);
-            }, { passive: true });
-
-            console.log("[OVERFLOW_DEBUG] Container scroll watcher attached");
-        } catch(e) {
-            console.log("[OVERFLOW_DEBUG] attachContainerScrollWatcher error:", e);
+            return 0;
         }
-    }
 
-    attachContainerScrollWatcher();
+        function attachContainerScrollWatcher() {
+            try {
+                var manager = rendition.manager;
+                if (!manager || !manager.container) {
+                    setTimeout(attachContainerScrollWatcher, 300);
+                    return;
+                }
+
+                manager.container.addEventListener("scroll", function() {
+                    var currentScrollLeft = manager.container.scrollLeft;
+                    console.log("[OVERFLOW_DEBUG] scroll event, scrollLeft:", currentScrollLeft);
+
+                    // Mencegah Chromium auto-scroll saat sedang menyeleksi teks
+                    if (isSelectingText) {
+                        if (Math.abs(currentScrollLeft - lockedScrollLeft) > 2) {
+                            console.log("[OVERFLOW_DEBUG] Preventing Chromium auto-scroll, restoring scrollLeft to:", lockedScrollLeft);
+                            manager.container.scrollLeft = lockedScrollLeft;
+                        }
+                        clearTimeout(scrollSnapTimer);
+                        return;
+                    }
+
+                    clearTimeout(scrollSnapTimer);
+                    scrollSnapTimer = setTimeout(function() {
+                        snapContainerToPage();
+                    }, 150);
+                }, { passive: true });
+
+                console.log("[OVERFLOW_DEBUG] Container scroll watcher attached");
+            } catch(e) {
+                console.log("[OVERFLOW_DEBUG] attachContainerScrollWatcher error:", e);
+            }
+        }
+
+        attachContainerScrollWatcher();
 
         function getLocationsCacheKey() {
             return "epub_location_" + bookIdParam + "_fs" + currentFontSize;
@@ -473,7 +509,6 @@
         });
 
         function handleTapOrSwipe(doc) {
-
             if (isDraggingSelection) return;
             if (doc) {
                 var sel = doc.getSelection();
@@ -513,37 +548,39 @@
 
             doc.addEventListener("pointerdown", function (e) {
                 logContainerState("pointerdown");
+                
+                if (!isSelectingText) {
+                    lockedScrollLeft = getSnappedScrollLeft();
+                    console.log("[OVERFLOW_DEBUG] Pointerdown lock scrollLeft:", lockedScrollLeft);
+                }
+                
                 var sel = doc.getSelection();
                 if (sel && !sel.isCollapsed) {
                     isDraggingSelection = true;
+                    isSelectingText = true;
                     if (window.Android && window.Android.onSelectionCleared) {
                         window.Android.onSelectionCleared();
                     }
                 }
-            });
-
-            doc.addEventListener("pointermove", function (e) {
-                if (isDraggingSelection) {
-                    logContainerState("pointermove (dragging)");
-                    clearTimeout(selectionDebounceTimer);
-                }
-            });
-
-            doc.addEventListener("pointerup", handleSelectionEnd);
-            doc.addEventListener("touchend", handleSelectionEnd);
-
-            function handleSelectionEnd() {
-                logContainerState("selection end (before)")
-                clearTimeout(selectionDebounceTimer);
-                selectionDebounceTimer = setTimeout(function () {
-                    isDraggingSelection = false;
-                    processSelectedText(doc);
-                    logContainerState("selection end (after)")
-                }, 180);
-            }
+            }, { passive: true });
 
             doc.addEventListener("selectionchange", function () {
                 var sel = doc.getSelection();
+
+                if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                    if (!isSelectingText) {
+                        isSelectingText = true;
+
+                        if (lockedScrollLeft === 0) {
+                            lockedScrollLeft = getSnappedScrollLeft();
+                        }
+                        console.log("[OVERFLOW_DEBUG] Selection dimulai, lock scrollLeft:", lockedScrollLeft);
+                    }
+                } else {
+                    if (!isDraggingSelection) {
+                        isSelectingText = false;
+                    }
+                }
 
                 if (!sel || sel.isCollapsed || sel.toString().trim().length === 0) {
                     if (window.Android && window.Android.onSelectionCleared) {
@@ -559,13 +596,37 @@
                     }, 200);
                 }
             });
+
+            doc.addEventListener("pointermove", function (e) {
+                if (isDraggingSelection) {
+                    logContainerState("pointermove (dragging)");
+                    clearTimeout(selectionDebounceTimer);
+                }
+            }, { passive: true });
+
+            doc.addEventListener("pointerup", handleSelectionEnd);
+            doc.addEventListener("touchend", handleSelectionEnd);
+
+            function handleSelectionEnd() {
+                logContainerState("selection end (before)");
+                clearTimeout(selectionDebounceTimer);
+                selectionDebounceTimer = setTimeout(function () {
+                    isDraggingSelection = false;
+                    isSelectingText = false;
+                    
+                    snapContainerToPage();
+                    
+                    processSelectedText(doc);
+                    logContainerState("selection end (after)");
+                }, 180);
+            }
         }
 
         function snapContainerToPage() {
             try {
                 var manager = rendition.manager;
                 if (!manager || !manager.container || !manager.layout) return;
-                if (isOverviewActive) return;
+                if (isOverviewActive || isSelectingText) return;
 
                 var container = manager.container;
                 var delta = manager.layout.delta;
