@@ -14,6 +14,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -225,6 +226,16 @@ fun ReaderScreen(
         "#E91E63" to Color(0xFFE91E63)  // Pink
     )
 
+    LaunchedEffect(isOverviewMode) {
+        webViewRef?.evaluateJavascript("javascript:setOverviewState($isOverviewMode);", null)
+    }
+
+    BackHandler(enabled = isOverviewMode) {
+        isOverviewMode = false
+        webViewRef?.evaluateJavascript("javascript:setOverviewState(false);", null)
+        onBack()
+    }
+
     LaunchedEffect(
         readerSettings.isDarkMode,
         readerSettings.fontFamily,
@@ -270,7 +281,7 @@ fun ReaderScreen(
         }
     }
 
-    // Controls System Bars dinamically
+    // Controls System Bars dynamically
     val window = (context as? Activity)?.window
     LaunchedEffect(isOverviewMode) {
         if (window != null) {
@@ -284,7 +295,7 @@ fun ReaderScreen(
         }
     }
 
-    // Disposable Effect khusus cleanup saat layar ditutup
+    // Disposable Effect khusus cleanup saat layar ditutup[cite: 5]
     DisposableEffect(Unit) {
         onDispose {
             Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
@@ -562,6 +573,24 @@ fun ReaderScreen(
                             ), "Android")
 
                             webViewClient = object : WebViewClient() {
+
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                    val url = request?.url?.toString() ?: return false
+
+                                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                                        if (!url.contains("127.0.0.1:8080")) {
+                                            try {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                context.startActivity(intent)
+                                                return true
+                                            } catch (e: Exception) {
+                                                Log.e("ReaderScreen", "Failed to open browser: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                    return false
+                                }
+
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
 
