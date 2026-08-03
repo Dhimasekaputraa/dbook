@@ -65,7 +65,6 @@
 
         var isDraggingSelection = false;
         var selectionDebounceTimer = null;
-
         var scrollSnapTimer = null;
 
         var isSelectingText = false;
@@ -102,12 +101,9 @@
 
                 manager.container.addEventListener("scroll", function() {
                     var currentScrollLeft = manager.container.scrollLeft;
-                    console.log("[OVERFLOW_DEBUG] scroll event, scrollLeft:", currentScrollLeft);
 
-                    // Mencegah Chromium auto-scroll saat sedang menyeleksi teks
                     if (isSelectingText) {
                         if (Math.abs(currentScrollLeft - lockedScrollLeft) > 2) {
-                            console.log("[OVERFLOW_DEBUG] Preventing Chromium auto-scroll, restoring scrollLeft to:", lockedScrollLeft);
                             manager.container.scrollLeft = lockedScrollLeft;
                         }
                         clearTimeout(scrollSnapTimer);
@@ -119,8 +115,6 @@
                         snapContainerToPage();
                     }, 150);
                 }, { passive: true });
-
-                console.log("[OVERFLOW_DEBUG] Container scroll watcher attached");
             } catch(e) {
                 console.log("[OVERFLOW_DEBUG] attachContainerScrollWatcher error:", e);
             }
@@ -128,8 +122,9 @@
 
         attachContainerScrollWatcher();
 
+        // FIX 1: Kunci cache stabil murni berdasarkan bookIdParam
         function getLocationsCacheKey() {
-            return "epub_location_" + bookIdParam + "_fs" + currentFontSize;
+            return "epub_location_v2_" + bookIdParam;
         }
 
         function loadOrGenerateLocations() {
@@ -146,7 +141,6 @@
                 if (cached) {
                     try {
                         book.locations.load(cached);
-                        console.log("Locations loaded from cache, Total:", book.locations.total);
                         if (window.Android && window.Android.onIndexingProgress) {
                             try { window.Android.onIndexingProgress(100); } catch(e) {}
                         }
@@ -185,7 +179,6 @@
                     try {
                         var generated = book.locations.save();
                         localStorage.setItem(cacheKey, generated);
-                        console.log("Locations generated and cached. Total:", book.locations.total);
                     } catch (e) {
                         console.log("Failed to save locations to cache:", e);
                     }
@@ -196,7 +189,6 @@
                     resolve();
                 }).catch(function(err) {
                     if (originalProcess) book.locations.process = originalProcess;
-                    console.log("Locations generate error:", err);
                     if (window.Android && window.Android.onIndexingProgress) {
                         try { window.Android.onIndexingProgress(100); } catch(e) {}
                     }
@@ -296,6 +288,7 @@
             }
         }
 
+        // FIX 2: Alur Inisialisasi Murni Tunggal
         book.ready.then(function() {
             return loadOrGenerateLocations();
         }).then(function() {
@@ -329,32 +322,18 @@
                 try { window.Android.onChaptersLoaded(JSON.stringify(chapterList)); } catch(e) {}
             }
 
-            console.log("[READER_LOG] initialCfi dari URL:", initialCfi);
-            if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
-                console.log("[READER_LOG] Displaying target CFI:", initialCfi);
-                
-                return rendition.display(initialCfi).then(function() {
-                    setTimeout(function() {
-                        var currentLoc = rendition.currentLocation();
-                        if (currentLoc && currentLoc.start && currentLoc.start.cfi !== initialCfi) {
-                            console.log("[READER_LOG] Retrying display for precise CFI alignment...");
-                            rendition.display(initialCfi);
-                        }
-                    }, 100);
-                });
-            } else {
-                return rendition.display();
-            }
+            // Jalankan rendition.display HANYA SATU KALI
+            var targetToDisplay = (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") 
+                ? decodeURIComponent(initialCfi) 
+                : undefined;
+
+            return rendition.display(targetToDisplay);
         }).catch(function(err) {
             console.log("Book ready chain error:", err);
             if (window.Android && window.Android.onIndexingProgress) {
                 try { window.Android.onIndexingProgress(100); } catch(e) {}
             }
-            if (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") {
-                rendition.display(initialCfi);
-            } else {
-                rendition.display();
-            }
+            rendition.display();
         });
 
         function sendProgress(location) {
@@ -365,8 +344,6 @@
                 var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
                 var currentCfi = location.start.cfi;
 
-                console.log("[READER_LOG] Relocated -> Page:", currentPage, "CFI:", currentCfi);
-                
                 var chapterName = "Chapter";
                 var cleanHref = location.start.href.split('#')[0];
                 var navItem = book.navigation.get(location.start.href) || book.navigation.get(cleanHref);
@@ -396,19 +373,15 @@
                         var wouldFit = this.container.scrollLeft + this.container.offsetWidth + this.layout.delta
                             <= this.container.scrollWidth + EPSILON;
                         if (wouldFit) {
-                            console.log("[NEXT_PATCH] Forcing scrollBy, deficit:",
-                                (this.container.scrollLeft + this.container.offsetWidth + this.layout.delta) - this.container.scrollWidth);
                             this.scrollBy(this.layout.delta, 0, true);
                             return Promise.resolve();
                         }
                     }
                 } catch (e) {
-                    console.log("[NEXT_PATCH] error, fallback ke next() asli:", e);
+                    console.log("[NEXT_PATCH] fallback error:", e);
                 }
                 return originalNext();
             };
-
-            console.log("[NEXT_PATCH] manager.next() berhasil dipatch dengan toleransi epsilon");
         }
 
         function safeNext() {
@@ -455,16 +428,7 @@
                         if (currentIndex > 0) {
                             var prevSpine = book.spine.get(currentIndex - 1);
                             if (prevSpine) {
-                                var prevHref = prevSpine.href ? prevSpine.href.toLowerCase() : "";
-                                var mediaType = prevSpine.mediaType ? prevSpine.mediaType.toLowerCase() : "";
-                                var isRawImageOrSprite = mediaType.startsWith("image/") ||
-                                                         prevHref.match(/\.(jpg|jpeg|png|gif|svg)$/i) ||
-                                                         prevHref.includes("cvi") ||
-                                                         prevHref.includes("adc");
-
-                                if (!isRawImageOrSprite) {
-                                    rendition.display(prevSpine.href);
-                                }
+                                rendition.display(prevSpine.href);
                             }
                         }
                     }
@@ -492,6 +456,38 @@
 
         rendition.hooks.content.register(function(contents) {
             var doc = contents.document;
+
+            try {
+                var loc = rendition.currentLocation();
+                if (loc && loc.start && loc.start.index === 0) {
+                    var currentHref = (loc.start.href || "").toLowerCase();
+                    
+                    var isTitlePage = currentHref.includes("titlepage") || 
+                                      currentHref.includes("title_page"); 
+
+                    if (!isTitlePage) {
+                        book.coverUrl().then(function(url) {
+                            if (url) {
+                                var imgEl = doc.querySelector("img");
+                                var svgImageEl = doc.querySelector("svg image");
+                                
+                                if (imgEl) {
+                                    imgEl.src = url;
+                                    imgEl.style.setProperty("max-width", "100%", "important");
+                                    imgEl.style.setProperty("max-height", "100vh", "important");
+                                } else if (svgImageEl) {
+                                    svgImageEl.setAttribute("xlink:href", url);
+                                    svgImageEl.setAttribute("href", url);
+                                }
+                            }
+                        }).catch(function(e) {
+                            console.log("[COVER_FIX] Error getting coverUrl:", e);
+                        });
+                    }
+                }
+            } catch(e) {
+                console.log("[COVER_FIX] Hook error:", e);
+            }
 
             doc.addEventListener("click", function(e) {
                 var target = e.target.closest("a");
@@ -595,11 +591,8 @@
             if (!doc) return;
 
             doc.addEventListener("pointerdown", function (e) {
-                logContainerState("pointerdown");
-                
                 if (!isSelectingText) {
                     lockedScrollLeft = getSnappedScrollLeft();
-                    console.log("[OVERFLOW_DEBUG] Pointerdown lock scrollLeft:", lockedScrollLeft);
                 }
                 
                 var sel = doc.getSelection();
@@ -622,7 +615,6 @@
                         if (lockedScrollLeft === 0) {
                             lockedScrollLeft = getSnappedScrollLeft();
                         }
-                        console.log("[OVERFLOW_DEBUG] Selection dimulai, lock scrollLeft:", lockedScrollLeft);
                     }
                 } else {
                     if (!isDraggingSelection) {
@@ -647,7 +639,6 @@
 
             doc.addEventListener("pointermove", function (e) {
                 if (isDraggingSelection) {
-                    logContainerState("pointermove (dragging)");
                     clearTimeout(selectionDebounceTimer);
                 }
             }, { passive: true });
@@ -656,16 +647,13 @@
             doc.addEventListener("touchend", handleSelectionEnd);
 
             function handleSelectionEnd() {
-                logContainerState("selection end (before)");
                 clearTimeout(selectionDebounceTimer);
                 selectionDebounceTimer = setTimeout(function () {
                     isDraggingSelection = false;
                     isSelectingText = false;
                     
                     snapContainerToPage();
-                    
                     processSelectedText(doc);
-                    logContainerState("selection end (after)");
                 }, 180);
             }
         }
@@ -684,7 +672,6 @@
                 var snapped = Math.round(current / delta) * delta;
 
                 if (Math.abs(current - snapped) > 2) {
-                    console.log("[OVERFLOW_DEBUG] Drift detected. Snapping scrollLeft:", current, "->", snapped);
                     container.scrollLeft = snapped;
                 }
             } catch(e) {
@@ -722,8 +709,6 @@
 
                     cfi = matchedContents.cfiFromRange(range);
                 }
-
-                console.log("[SELECTION_DEBUG] Generated CFI:", cfi);
 
                 if (window.Android && window.Android.onTextSelectedWithPosition && cfi) {
                     window.Android.onTextSelectedWithPosition(cfi, selectedText, posX, topY, bottomY);
@@ -867,16 +852,14 @@
         }
 
         function applyHighlight(cfi, colorHex) {
-            console.log("[HIGHLIGHT_DEBUG] Received CFI:", cfi);
             try {
-                var result = rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
+                rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
                     "fill": colorHex,
                     "fill-opacity": "0.35",
                     "mix-blend-mode": "multiply"
                 });
-                console.log("[HIGHLIGHT_DEBUG] Highlight result:", result);
             } catch (err) {
-                console.error("[HIGHLIGHT_DEBUG] Highlight failed:", err.message, err.stack);
+                console.error("[HIGHLIGHT_DEBUG] Highlight failed:", err);
             }
             var iframe = document.querySelector("iframe");
             if (iframe && iframe.contentDocument) {
@@ -900,6 +883,7 @@
         var searchHighlightCfi = null;
         var isNavigatingToSearch = false;
 
+        // FIX 3: Lompatan hasil pencarian yang stabil tanpa trigger re-display ganda
         function goToSearchResult(cfi, searchText) {
             if (!cfi) return;
 
@@ -907,7 +891,6 @@
 
             rendition.display(cfi).then(function() {
                 setTimeout(function() {
-                    resetIframeScroll();
                     clearSearchHighlight();
                     applySearchHighlight(cfi);
 
@@ -916,7 +899,7 @@
                     }
 
                     isNavigatingToSearch = false;
-                }, 300);
+                }, 200);
             }).catch(function(err) {
                 console.error("Error displaying search CFI:", err);
                 isNavigatingToSearch = false;
@@ -1026,8 +1009,6 @@
                     }
                 }
 
-                resetIframeScroll();
-
             } catch (e) {
                 console.error("DOM specific highlight error:", e);
             }
@@ -1084,28 +1065,11 @@
 
         rendition.on("relocated", function(location) {
             sendProgress(location);
-            resetIframeScroll();
             
             if (!isNavigatingToSearch) {
                 clearSearchHighlight();
             }
         });
-
-        function logContainerState(label) {
-            try {
-                var manager = rendition.manager;
-                if (manager && manager.container) {
-                    console.log("[OVERFLOW_DEBUG]", label,
-                        "scrollLeft:", manager.container.scrollLeft,
-                        "scrollWidth:", manager.container.scrollWidth,
-                        "clientWidth:", manager.container.clientWidth,
-                        "delta:", manager.layout ? manager.layout.delta : "n/a"
-                    );
-                }
-            } catch(e) {
-                console.log("[OVERFLOW_DEBUG] logContainerState error:", e);
-            }
-        }
     </script>
 </body>
 </html>
