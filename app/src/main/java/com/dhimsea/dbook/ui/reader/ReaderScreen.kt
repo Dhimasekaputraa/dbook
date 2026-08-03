@@ -37,10 +37,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,10 +70,10 @@ import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.repository.BookRepository
 import com.dhimsea.dbook.ui.components.QuoteShareDialog
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CoroutineScope
 import org.json.JSONArray
 import java.net.URLEncoder
 
@@ -178,8 +178,13 @@ fun ReaderScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val isDarkMode = isSystemInDarkTheme()
+    val isSystemDark = isSystemInDarkTheme()
     val density = LocalDensity.current.density
+
+    var showAppearanceBottomSheet by remember { mutableStateOf(false) }
+    var readerSettings by remember {
+        mutableStateOf(ReaderSettings.loadFromPrefs(context, isSystemDark))
+    }
 
     var currentBook by remember { mutableStateOf<Book?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -190,7 +195,7 @@ fun ReaderScreen(
     var currentPage by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableIntStateOf(1) }
     var currentPercent by remember { mutableFloatStateOf(0f) }
-    var currentChapter by remember { mutableStateOf("Memuat Chapter...") }
+    var currentChapter by remember { mutableStateOf("Loading Chapter...") }
     var chapters by remember { mutableStateOf<List<ChapterMarker>>(emptyList()) }
 
     var indexingProgress by remember { mutableIntStateOf(0) }
@@ -220,27 +225,22 @@ fun ReaderScreen(
         "#E91E63" to Color(0xFFE91E63)  // Pink
     )
 
-    LaunchedEffect(isOverviewMode) {
-        val window = (context as? Activity)?.window ?: return@LaunchedEffect
-        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-
-        if (isOverviewMode) {
-            insetsController.show(WindowInsetsCompat.Type.systemBars())
-            webViewRef?.evaluateJavascript("setOverviewState(true);", null)
-        } else {
-            isSearchBarExpanded = false
-            searchText = ""
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            webViewRef?.evaluateJavascript("setOverviewState(false);", null)
+    LaunchedEffect(
+        readerSettings.isDarkMode,
+        readerSettings.fontFamily,
+        readerSettings.fontSize,
+        readerSettings.lineHeight,
+        readerSettings.textAlign
+    ) {
+        webViewRef?.let { webView ->
+            val script = "javascript:updateTextFormatting('${readerSettings.fontFamily}', ${readerSettings.fontSize}, ${readerSettings.lineHeight}, '${readerSettings.textAlign}', ${readerSettings.isDarkMode});"
+            webView.evaluateJavascript(script, null)
         }
     }
 
-    // Handle Jump to CFI when returning from Annotation Screen or Search
     LaunchedEffect(initialCfiToJump) {
         if (!initialCfiToJump.isNullOrEmpty()) {
             Log.d("DBOOK_DEBUG", "LaunchedEffect triggered for CFI: $initialCfiToJump")
-            // Give a small delay to ensure WebView is fully rendered and ready for navigation
             delay(500)
             webViewRef?.evaluateJavascript("goToSearchResult('$initialCfiToJump', '$searchQueryToHighlight');", null)
         }
@@ -251,16 +251,12 @@ fun ReaderScreen(
     val animatedOffsetY by animateFloatAsState(targetValue = if (isOverviewMode) 6f else 0f, animationSpec = spec, label = "")
     val animatedCornerRadius by animateFloatAsState(targetValue = if (isOverviewMode) 16f else 0f, animationSpec = spec, label = "")
     val animatedElevation by animateFloatAsState(targetValue = if (isOverviewMode) 12f else 0f, animationSpec = spec, label = "")
-    val outerBackgroundColor = if (isOverviewMode) MaterialTheme.colorScheme.surfaceContainer else if (isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
+    val outerBackgroundColor = if (isOverviewMode) MaterialTheme.colorScheme.surfaceContainer else if (readerSettings.isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
 
     val server = remember { LocalBookServer(context, 8080) }
 
     LaunchedEffect(filePath) {
         scope.launch(Dispatchers.IO) { currentBook = bookRepository.getBookByFilePath(filePath) }
-    }
-
-    LaunchedEffect(isDarkMode) {
-        webViewRef?.evaluateJavascript("setTheme($isDarkMode);", null)
     }
 
     LaunchedEffect(filePath) {
@@ -274,12 +270,27 @@ fun ReaderScreen(
         }
     }
 
+    // Controls System Bars dinamically
+    val window = (context as? Activity)?.window
+    LaunchedEffect(isOverviewMode) {
+        if (window != null) {
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            if (isOverviewMode) {
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            } else {
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+    }
+
+    // Disposable Effect khusus cleanup saat layar ditutup
     DisposableEffect(Unit) {
         onDispose {
             Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
             Log.d("DBOOK_DEBUG", "Saving final CFI to DB: $latestCfi")
             if (server.isAlive) server.stop()
-            val window = (context as? Activity)?.window
+
             if (window != null) {
                 WindowCompat.getInsetsController(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
             }
@@ -426,6 +437,13 @@ fun ReaderScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    IconButton(onClick = { showAppearanceBottomSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Reader Settings",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -475,7 +493,7 @@ fun ReaderScreen(
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
 
-                            setBackgroundColor(if (isDarkMode) AndroidColor.parseColor("#121212") else AndroidColor.parseColor("#ffffff"))
+                            setBackgroundColor(if (readerSettings.isDarkMode) AndroidColor.parseColor("#121212") else AndroidColor.parseColor("#ffffff"))
 
                             settings.apply {
                                 javaScriptEnabled = true
@@ -546,7 +564,9 @@ fun ReaderScreen(
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
-                                    view?.evaluateJavascript("setTheme($isDarkMode);", null)
+
+                                    val initScript = "javascript:updateTextFormatting('${readerSettings.fontFamily}', ${readerSettings.fontSize}, ${readerSettings.lineHeight}, '${readerSettings.textAlign}', ${readerSettings.isDarkMode});"
+                                    view?.evaluateJavascript(initScript, null)
 
                                     if (!initialCfiToJump.isNullOrEmpty()) {
                                         val query = searchQueryToHighlight ?: ""
@@ -636,7 +656,6 @@ fun ReaderScreen(
             val popupWidthPx = (220 * density).toInt()
             val popupHeightPx = (210 * density).toInt()
 
-            // Calculate total vertical height of the current selection
             val selectionHeightPx = pxBottomY - pxTopY
 
             val isFullPageSelection = selectionHeightPx > (screenHeightPx * 0.50f) || 
@@ -657,7 +676,6 @@ fun ReaderScreen(
                 val hasSpaceOnTop = pxTopY - popupHeightPx - topGapOffsetPx > 0
 
                 targetY = if (hasSpaceOnTop) {
-
                     pxTopY - popupHeightPx - topGapOffsetPx
                 } else {                    
                     (pxBottomY + bottomGapOffsetPx).coerceAtMost(screenHeightPx - popupHeightPx - 16)
@@ -949,6 +967,18 @@ fun ReaderScreen(
             bookTitle = bookTitleToShare,
             bookAuthor = bookAuthorToShare,
             onDismiss = { showQuoteShareDialog = false }
+        )
+    }
+    if (showAppearanceBottomSheet) {
+        ReaderAppearanceBottomSheet(
+            settings = readerSettings,
+            onSettingsChanged = { updatedSettings ->
+                readerSettings = updatedSettings
+                ReaderSettings.saveToPrefs(context, updatedSettings)
+            },
+            onDismissRequest = {
+                showAppearanceBottomSheet = false
+            }
         )
     }
 }
