@@ -4,7 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import java.io.InputStream
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.zip.ZipInputStream
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
@@ -35,9 +36,9 @@ object EpubUtils {
                             name.endsWith(".opf") -> {
                                 opfContent = zip.readBytes().toString(Charsets.UTF_8)
                             }
-                            // Simpan semua image untuk dicari cover-nya nanti
-                            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") -> {
-                                imageMap[entry.name] = zip.readBytes()
+                            // Simpan semua image untuk dicari cover-nya nanti (gunakan key lowercase)
+                            name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") -> {
+                                imageMap[name] = zip.readBytes()
                             }
                         }
                         zip.closeEntry()
@@ -49,11 +50,9 @@ object EpubUtils {
             e.printStackTrace()
         }
 
-        // Parse OPF untuk title, author, dan cover image id
+        // Parse OPF untuk title, author, dan cover image
         if (opfContent != null) {
             try {
-                var coverImageHref: String? = null
-
                 val factory = XmlPullParserFactory.newInstance()
                 factory.isNamespaceAware = true
                 val parser = factory.newPullParser()
@@ -61,12 +60,17 @@ object EpubUtils {
 
                 var insideMetadata = false
                 var coverItemId: String? = null
+                val itemMapById = mutableMapOf<String, String>() // Map ID -> Href
+                val allImageHrefs = mutableListOf<String>()
+                var epub3CoverHref: String? = null
+                var guideCoverHref: String? = null
 
                 var eventType = parser.eventType
                 while (eventType != XmlPullParser.END_DOCUMENT) {
                     when (eventType) {
                         XmlPullParser.START_TAG -> {
-                            when (parser.name.lowercase()) {
+                            val tagName = parser.name.lowercase()
+                            when (tagName) {
                                 "metadata" -> insideMetadata = true
 
                                 // Ambil title
@@ -83,29 +87,41 @@ object EpubUtils {
                                     }
                                 }
 
-                                // Ambil cover image id dari meta tag
+                                // Ambil cover image id dari meta tag (EPUB 2)
                                 "meta" -> {
                                     val metaName = parser.getAttributeValue(null, "name")
                                     val metaContent = parser.getAttributeValue(null, "content")
-                                    if (metaName == "cover" && metaContent != null) {
+                                    if (metaName.equals("cover", ignoreCase = true) && metaContent != null) {
                                         coverItemId = metaContent
                                     }
                                 }
 
-                                // Cari href dari item yang id-nya cocok dengan coverItemId
+                                // Kumpulkan semua item manifest
                                 "item" -> {
                                     val itemId = parser.getAttributeValue(null, "id")
                                     val itemHref = parser.getAttributeValue(null, "href")
                                     val mediaType = parser.getAttributeValue(null, "media-type") ?: ""
-                                    if (itemId != null && itemId == coverItemId && itemHref != null) {
-                                        coverImageHref = itemHref
+                                    val properties = parser.getAttributeValue(null, "properties") ?: ""
+
+                                    if (itemId != null && itemHref != null) {
+                                        itemMapById[itemId] = itemHref
                                     }
-                                    // Fallback: item yang media-type image dan id mengandung "cover"
-                                    if (coverImageHref == null &&
-                                        mediaType.startsWith("image/") &&
-                                        itemId?.lowercase()?.contains("cover") == true
-                                    ) {
-                                        coverImageHref = itemHref
+
+                                    if (mediaType.startsWith("image/") && itemHref != null) {
+                                        allImageHrefs.add(itemHref)
+                                        // EPUB 3 Standard: properties="cover-image"
+                                        if (properties.contains("cover-image")) {
+                                            epub3CoverHref = itemHref
+                                        }
+                                    }
+                                }
+
+                                // Ambil dari tag <reference type="cover" ...>
+                                "reference" -> {
+                                    val type = parser.getAttributeValue(null, "type")
+                                    val href = parser.getAttributeValue(null, "href")
+                                    if (type.equals("cover", ignoreCase = true) && href != null) {
+                                        guideCoverHref = href
                                     }
                                 }
                             }
@@ -117,18 +133,50 @@ object EpubUtils {
                     eventType = parser.next()
                 }
 
-                // Cari cover bytes dari imageMap berdasarkan href
-                if (coverImageHref != null) {
-                    val matchKey = imageMap.keys.firstOrNull { it.endsWith(coverImageHref!!) }
-                    coverBytes = matchKey?.let { imageMap[it] }
+                // DETERMINASI PATH COVER IMAGE (Hirarki Keputusan)
+                var targetHref: String? = epub3CoverHref
+
+                // Prioritas 2: Map ID dari <meta name="cover" content="ID"/> ke manifest <item>
+                if (targetHref == null && coverItemId != null) {
+                    targetHref = itemMapById[coverItemId]
                 }
 
-                // Fallback: cari gambar yang namanya mengandung "cover"
-                if (coverBytes == null) {
-                    val fallbackKey = imageMap.keys.firstOrNull {
-                        it.lowercase().contains("cover")
+                // Prioritas 3: Tangkap dari Guide Reference
+                if (targetHref == null && guideCoverHref != null) {
+                    val cleanGuide = guideCoverHref.substringBefore("#").substringAfterLast("/")
+                    targetHref = allImageHrefs.find { it.contains(cleanGuide.substringBefore("."), ignoreCase = true) }
+                }
+
+                // Prioritas 4: Heuristic Match kata kunci cvi, cover, front, title
+                if (targetHref == null) {
+                    val keywords = listOf("cvi", "cover", "front", "title")
+                    for (keyword in keywords) {
+                        val matched = allImageHrefs.find { it.substringAfterLast("/").lowercase().contains(keyword) }
+                        if (matched != null) {
+                            targetHref = matched
+                            break
+                        }
                     }
-                    coverBytes = fallbackKey?.let { imageMap[it] }
+                }
+
+                // Prioritas 5: Fallback gambar pertama
+                if (targetHref == null) {
+                    targetHref = allImageHrefs.firstOrNull()
+                }
+
+                // AMBIL BYTES GAMBAR DARI MAP DENGAN DECODE URL
+                if (targetHref != null) {
+                    val decodedHref = try {
+                        URLDecoder.decode(targetHref, StandardCharsets.UTF_8.name()).lowercase()
+                    } catch (e: Exception) {
+                        targetHref.lowercase()
+                    }
+                    val fileName = decodedHref.substringAfterLast("/")
+
+                    val matchKey = imageMap.keys.firstOrNull { key ->
+                        key.endsWith(fileName) || key.endsWith(decodedHref)
+                    }
+                    coverBytes = matchKey?.let { imageMap[it] }
                 }
 
             } catch (e: Exception) {
