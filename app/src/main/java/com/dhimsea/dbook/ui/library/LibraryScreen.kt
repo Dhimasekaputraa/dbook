@@ -174,7 +174,11 @@ fun LibraryScreen(
                             }
                         },
                         colors = SearchBarDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.surface
+                            containerColor = if (isSearchActive) {
+                                MaterialTheme.colorScheme.surface
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
