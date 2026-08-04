@@ -15,6 +15,15 @@
 * **In-Book Search**: Easily search for words or phrases within the book with dynamic text highlighting.
 * **Share Text as Image**: Highlight your favorite quotes and share them directly as images.
 * **Reading Progress Tracking**: Automatically saves and restores your last read location and percentage.
+---
+
+## Screenshots
+
+| Home Screen | Reader Screen | Share as Image |
+|:-----------:|:-------------:|:-------------:|
+| <img src="app/src/main/assets/screenshots/Screenshot_20260805-013553_DBook.png" width="310"/> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-012940_DBook.png" width="310" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-013246_DBook.png" width="310" />
+
+---
 
 ## Building from Source
 
