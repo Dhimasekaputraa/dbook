@@ -35,7 +35,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="dbook"
+            android:label="DBook"
             android:theme="@style/Theme.Dbook.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

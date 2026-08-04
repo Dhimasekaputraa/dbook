@@ -23,6 +23,18 @@ android {
         vectorDrawables{
             useSupportLibrary = true
         }
+
+        applicationVariants.all {
+            val variant = this
+            if (variant.buildType.name == "release") {
+                variant.outputs.all {
+                    val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                    val projectName = "DBook"
+                    val versionName = variant.versionName
+                    output?.outputFileName = "${projectName}-v${versionName}-release.apk"
+                }
+            }
+        }
     }
 
     buildTypes {
