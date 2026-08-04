@@ -79,7 +79,6 @@ class BookRepositoryImpl(
         annotationDao.deleteAnnotation(annotation.toEntity())
     }
 
-    // --- MAPPER FUNCTIONS ---
     private fun AnnotationEntity.toDomain() = Annotation(
         id = id,
         bookId = bookId,

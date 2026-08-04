@@ -32,11 +32,11 @@ object EpubUtils {
                     while (entry != null) {
                         val name = entry.name.lowercase()
                         when {
-                            // Baca file OPF untuk metadata title & author
+                          
                             name.endsWith(".opf") -> {
                                 opfContent = zip.readBytes().toString(Charsets.UTF_8)
                             }
-                            // Simpan semua image untuk dicari cover-nya nanti (gunakan key lowercase)
+                          
                             name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") -> {
                                 imageMap[name] = zip.readBytes()
                             }
@@ -50,7 +50,6 @@ object EpubUtils {
             e.printStackTrace()
         }
 
-        // Parse OPF untuk title, author, dan cover image
         if (opfContent != null) {
             try {
                 val factory = XmlPullParserFactory.newInstance()
@@ -60,7 +59,7 @@ object EpubUtils {
 
                 var insideMetadata = false
                 var coverItemId: String? = null
-                val itemMapById = mutableMapOf<String, String>() // Map ID -> Href
+                val itemMapById = mutableMapOf<String, String>()
                 val allImageHrefs = mutableListOf<String>()
                 var epub3CoverHref: String? = null
                 var guideCoverHref: String? = null
@@ -73,21 +72,18 @@ object EpubUtils {
                             when (tagName) {
                                 "metadata" -> insideMetadata = true
 
-                                // Ambil title
                                 "dc:title", "title" -> {
                                     if (insideMetadata && title == null) {
                                         title = parser.nextText().trim().takeIf { it.isNotEmpty() }
                                     }
                                 }
 
-                                // Ambil author
                                 "dc:creator", "creator" -> {
                                     if (insideMetadata && author == null) {
                                         author = parser.nextText().trim().takeIf { it.isNotEmpty() }
                                     }
                                 }
 
-                                // Ambil cover image id dari meta tag (EPUB 2)
                                 "meta" -> {
                                     val metaName = parser.getAttributeValue(null, "name")
                                     val metaContent = parser.getAttributeValue(null, "content")
@@ -96,7 +92,6 @@ object EpubUtils {
                                     }
                                 }
 
-                                // Kumpulkan semua item manifest
                                 "item" -> {
                                     val itemId = parser.getAttributeValue(null, "id")
                                     val itemHref = parser.getAttributeValue(null, "href")
@@ -109,14 +104,13 @@ object EpubUtils {
 
                                     if (mediaType.startsWith("image/") && itemHref != null) {
                                         allImageHrefs.add(itemHref)
-                                        // EPUB 3 Standard: properties="cover-image"
+
                                         if (properties.contains("cover-image")) {
                                             epub3CoverHref = itemHref
                                         }
                                     }
                                 }
 
-                                // Ambil dari tag <reference type="cover" ...>
                                 "reference" -> {
                                     val type = parser.getAttributeValue(null, "type")
                                     val href = parser.getAttributeValue(null, "href")
@@ -133,21 +127,17 @@ object EpubUtils {
                     eventType = parser.next()
                 }
 
-                // DETERMINASI PATH COVER IMAGE (Hirarki Keputusan)
                 var targetHref: String? = epub3CoverHref
 
-                // Prioritas 2: Map ID dari <meta name="cover" content="ID"/> ke manifest <item>
                 if (targetHref == null && coverItemId != null) {
                     targetHref = itemMapById[coverItemId]
                 }
 
-                // Prioritas 3: Tangkap dari Guide Reference
                 if (targetHref == null && guideCoverHref != null) {
                     val cleanGuide = guideCoverHref.substringBefore("#").substringAfterLast("/")
                     targetHref = allImageHrefs.find { it.contains(cleanGuide.substringBefore("."), ignoreCase = true) }
                 }
 
-                // Prioritas 4: Heuristic Match kata kunci cvi, cover, front, title
                 if (targetHref == null) {
                     val keywords = listOf("cvi", "cover", "front", "title")
                     for (keyword in keywords) {
@@ -159,12 +149,10 @@ object EpubUtils {
                     }
                 }
 
-                // Prioritas 5: Fallback gambar pertama
                 if (targetHref == null) {
                     targetHref = allImageHrefs.firstOrNull()
                 }
 
-                // AMBIL BYTES GAMBAR DARI MAP DENGAN DECODE URL
                 if (targetHref != null) {
                     val decodedHref = try {
                         URLDecoder.decode(targetHref, StandardCharsets.UTF_8.name()).lowercase()

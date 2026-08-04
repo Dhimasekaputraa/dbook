@@ -29,7 +29,7 @@ import com.dhimsea.dbook.ui.components.QuoteShareDialog
 @Composable
 fun AnnotationScreen(
     bookTitle: String,
-    bookAuthor: String = "Unknown Author", // Opsional: Berikan nama penulis jika ada
+    bookAuthor: String = "Unknown Author",
     annotations: List<Annotation>,
     onAnnotationClick: (Annotation) -> Unit,
     onDeleteAnnotation: (Annotation) -> Unit,
@@ -91,7 +91,6 @@ fun AnnotationScreen(
             }
         }
 
-        // --- Pop up share annotation ---
         selectedAnnotationForShare?.let { annotation ->
             QuoteShareDialog(
                 quoteText = annotation.text,
@@ -101,7 +100,6 @@ fun AnnotationScreen(
             )
         }
 
-        // --- Pop up delete annotation ---
         selectedAnnotationForDelete?.let { annotation ->
             AlertDialog(
                 onDismissRequest = { selectedAnnotationForDelete = null },
@@ -183,7 +181,6 @@ fun AnnotationItemCard(
                     )
                 }
 
-                // option for annotations
                 Box {
                     IconButton(
                         onClick = { showMenu = true },
@@ -234,7 +231,6 @@ fun AnnotationItemCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Annotation Text
             Text(
                 text = "“${annotation.text}”",
                 style = MaterialTheme.typography.bodyMedium,
@@ -244,7 +240,6 @@ fun AnnotationItemCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Annotation Note
             if (annotation.note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))

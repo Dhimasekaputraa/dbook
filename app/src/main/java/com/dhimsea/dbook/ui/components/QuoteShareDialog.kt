@@ -114,7 +114,6 @@ fun QuoteShareDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // --- Color Theme ---
                 Text(
                     text = "Choose Color Theme",
                     style = MaterialTheme.typography.labelMedium,

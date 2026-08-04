@@ -220,10 +220,10 @@ fun ReaderScreen(
     var bookAuthorToShare by remember { mutableStateOf("") }
 
     val presetColors = listOf(
-        "#FFEB3B" to Color(0xFFFFEB3B), // Yellow
-        "#4CAF50" to Color(0xFF4CAF50), // Green
-        "#2196F3" to Color(0xFF2196F3), // Blue
-        "#E91E63" to Color(0xFFE91E63)  // Pink
+        "#FFEB3B" to Color(0xFFFFEB3B),
+        "#4CAF50" to Color(0xFF4CAF50),
+        "#2196F3" to Color(0xFF2196F3),
+        "#E91E63" to Color(0xFFE91E63)
     )
 
     LaunchedEffect(isOverviewMode) {
@@ -281,7 +281,6 @@ fun ReaderScreen(
         }
     }
 
-    // Controls System Bars dynamically
     val window = (context as? Activity)?.window
     LaunchedEffect(isOverviewMode) {
         if (window != null) {
@@ -295,7 +294,6 @@ fun ReaderScreen(
         }
     }
 
-    // Disposable Effect khusus cleanup saat layar ditutup[cite: 5]
     DisposableEffect(Unit) {
         onDispose {
             Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
@@ -320,7 +318,6 @@ fun ReaderScreen(
         }
     }
 
-    // Search function
     fun executeSearch(query: String) {
         if (query.isBlank()) return
         keyboardController?.hide()
@@ -362,7 +359,6 @@ fun ReaderScreen(
             .fillMaxSize()
             .background(outerBackgroundColor)
     ) {
-        // --- OVERVIEW TOP BAR ---
         AnimatedVisibility(
             visible = isOverviewMode,
             enter = slideInVertically { -it } + fadeIn(),
@@ -459,7 +455,7 @@ fun ReaderScreen(
             }
         }
 
-        // --- WEBVIEW CONTAINER ---
+    
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -656,7 +652,6 @@ fun ReaderScreen(
                 )
             }
 
-            // FULL-SCREEN LOADING OVERLAY
             AnimatedVisibility(
                 visible = isLoading || isIndexing,
                 exit = fadeOut(),
@@ -673,7 +668,6 @@ fun ReaderScreen(
             }
         }
 
-        // --- POPUP MENU CUSTOM ---
         if (pendingSelection != null && !showNoteDialog) {
             val screenWidthPx = (LocalConfiguration.current.screenWidthDp * density).toInt()
             val screenHeightPx = (LocalConfiguration.current.screenHeightDp * density).toInt()
@@ -731,7 +725,7 @@ fun ReaderScreen(
                             .width(220.dp)
                             .padding(vertical = 8.dp)
                     ) {
-                        // Preset Colors
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -752,7 +746,6 @@ fun ReaderScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                        // Add Note
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -775,7 +768,6 @@ fun ReaderScreen(
                         
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                        // Search in Book
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -812,7 +804,6 @@ fun ReaderScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                        // Share as Image
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -840,7 +831,6 @@ fun ReaderScreen(
             }
         }
 
-        // --- Page Navigation ---
         AnimatedVisibility(
             visible = isOverviewMode,
             enter = slideInVertically { it } + fadeIn(),
@@ -908,7 +898,6 @@ fun ReaderScreen(
         }
     }
 
-    // --- MODAL DIALOG : NOTE ---
     if (showNoteDialog && pendingSelection != null) {
         var noteInput by remember { mutableStateOf("") }
         var selectedColorHex by remember { mutableStateOf("#FFEB3B") }
@@ -1012,7 +1001,6 @@ fun ReaderScreen(
     }
 }
 
-// Loading screen : Indexing Book
 @Composable
 fun IndexingLoadingScreen(
     bookTitle: String,

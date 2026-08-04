@@ -125,7 +125,6 @@ fun SearchResultCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Highlight keyword
             val annotatedExcerpt = buildAnnotatedString {
                 val text = result.excerpt
                 val lowerText = text.lowercase()

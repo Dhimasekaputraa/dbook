@@ -59,7 +59,6 @@ class MainActivity : ComponentActivity() {
                     navController = navController, 
                     startDestination = Screen.Library.route
                 ) {
-                    // --- LIBRARY SCREEN ---
                     composable(Screen.Library.route) {
                         LibraryScreen(
                             viewModel = libraryViewModel,
@@ -73,7 +72,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // --- READER SCREEN ---
                     composable(
                         route = Screen.Reader.route,
                         enterTransition = {
@@ -115,7 +113,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // --- SEARCH RESULTS SCREEN ---
                     composable(
                         route = "search_results/{bookId}/{queryText}/{filePath}",
                         arguments = listOf(
@@ -171,7 +168,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     
-                    // --- ANNOTATION SCREEN ---
+
                     composable(
                         route = "annotation/{bookId}",
                         arguments = listOf(

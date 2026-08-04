@@ -23,7 +23,6 @@ class LocalBookServer(
         val uri = session.uri
         Log.d("LocalBookServer", "Request URI: $uri")
 
-        // 1. SERVE FILE EPUB BUKU
         if (uri == "/book.epub") {
             val path = bookPath ?: return notFoundResponse()
             
@@ -47,7 +46,6 @@ class LocalBookServer(
             return notFoundResponse()
         }
 
-        // 2. SERVE ASSETS (js, css, reader.html)
         return try {
             val assetPath = uri.trimStart('/')
             val inputStream = context.assets.open(assetPath)

@@ -12,7 +12,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 
 object FileUtil{
-//    Copy file from URI (SAF) to app internal storage
+
     fun copyUriToInternalStorage(context: Context, uri: Uri): File? {
         return try {
             val fileName = getFileName(context, uri) ?: "imported_book_${System.currentTimeMillis()}"
@@ -56,7 +56,7 @@ object FileUtil{
         }
         return result
     }
-//    Check the book format
+
     fun getBookFormat(fileName: String): BookFormat? {
         return when{
             fileName.endsWith(".epub", ignoreCase = true) -> BookFormat.EPUB

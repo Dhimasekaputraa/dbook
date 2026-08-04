@@ -65,27 +65,22 @@ fun LibraryScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // --- OBSERVE STATE PERSISTEN DARI VIEWMODEL ---
     val isGridView by viewModel.isGridView.collectAsState()
     val selectedSortOption by viewModel.selectedSortOption.collectAsState()
     val isAscending by viewModel.isAscending.collectAsState()
 
-    // --- SEARCH & LOCAL UI STATE ---
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var showSortDropdown by remember { mutableStateOf(false) }
 
-    // State Dialog & Deletion / Finishing
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToFinish by remember { mutableStateOf<Book?>(null) }
 
-    // Filter Continue Reading
     val continueReadingBooks = remember(books) {
         books.filter { book -> book.progressPercentage > 0f }
             .sortedByDescending { it.lastReadAt }
     }
 
-    // Filter & Sort All books
     val processedBooks = remember(searchQuery, books, selectedSortOption, isAscending) {
         var result = if (searchQuery.isBlank()) {
             books
@@ -150,7 +145,6 @@ fun LibraryScreen(
                     .fillMaxWidth()
                     .padding(top = 8.dp)
             ) {
-                // 1. SEARCHBAR
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -263,7 +257,6 @@ fun LibraryScreen(
                     }
                 }
 
-                // 2. ACTION BAR (SORTING DROPDOWN & TOGGLE BUTTON)
                 if (!isSearchActive) {
                     Row(
                         modifier = Modifier
@@ -367,7 +360,6 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    // --- SECTION CONTINUE READING ---
                     if (searchQuery.isBlank() && continueReadingBooks.isNotEmpty()) {
                         item {
                             Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -399,7 +391,6 @@ fun LibraryScreen(
                         }
                     }
 
-                    // --- SECTION HEADER PERPUSTAKAAN ---
                     item {
                         Text(
                             text = if (searchQuery.isNotBlank()) "Search Results" else "All Books",
@@ -409,7 +400,6 @@ fun LibraryScreen(
                         )
                     }
 
-                    // --- DAFTAR BUKU (GRID / LIST) ---
                     if (isGridView) {
                         item {
                             val gridHeight = calculateGridHeight(processedBooks.size)
@@ -450,7 +440,6 @@ fun LibraryScreen(
         }
     }
 
-    // --- Mark as finished Confirmation ---
     bookToFinish?.let { book ->
         AlertDialog(
             onDismissRequest = { bookToFinish = null },
@@ -476,7 +465,6 @@ fun LibraryScreen(
         )
     }
 
-    // --- Delete book confirmation ---
     bookToDelete?.let { book ->
         AlertDialog(
             onDismissRequest = { bookToDelete = null },
@@ -506,7 +494,6 @@ fun LibraryScreen(
     }
 }
 
-// --- CONTINUE READING Section ---
 @Composable
 fun LargeContinueReadingCard(
     book: Book,
@@ -604,7 +591,6 @@ fun LargeContinueReadingCard(
     }
 }
 
-// --- COMPOSABLE CARD UNTUK GRID BUKU ---
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BookItemCard(
@@ -690,7 +676,6 @@ fun BookItemCard(
     }
 }
 
-// --- COMPOSABLE TAMPILAN LIST BARIS ---
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BookItemListRow(
@@ -768,7 +753,6 @@ fun BookItemListRow(
     }
 }
 
-// --- DROPDOWN MENU ---
 @Composable
 fun BookDropdownMenu(
     showMenu: Boolean,

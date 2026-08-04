@@ -205,7 +205,6 @@ class LibraryViewModel(
         }
     }
 
-    // --- MARK AS FINISHED ---
     fun markBookAsFinished(book: Book) {
         viewModelScope.launch(Dispatchers.IO) {
             val resetBook = book.copy(

@@ -2,7 +2,6 @@ package com.dhimsea.dbook.core.designsystem
 
 import androidx.compose.ui.graphics.Color
 
-// Light
 val LightPrimary = Color(0xFF1A73E8)
 val LightOnPrimary = Color(0xFFFFFFFF)
 val LightPrimaryContainer = Color(0xFFD3E3FD)
@@ -21,7 +20,6 @@ val LightSurfaceVariant = Color(0xFFE8EAED)
 val LightOnSurfaceVariant = Color(0xFF5F6368)
 val LightOutline = Color(0xFFDADCE0)
 
-// Dark
 val DarkPrimary = Color(0xFF8AB4F8)
 val DarkOnPrimary = Color(0xFF041E49)
 val DarkPrimaryContainer = Color(0xFF1A3A6B)

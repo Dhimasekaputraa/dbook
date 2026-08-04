@@ -73,7 +73,6 @@ fun ReaderAppearanceBottomSheet(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // 1. FONT FAMILY
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -100,7 +99,6 @@ fun ReaderAppearanceBottomSheet(
 
             HorizontalDivider()
 
-            // 2. FONT SIZE
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -136,7 +134,6 @@ fun ReaderAppearanceBottomSheet(
                 }
             }
 
-            // 3. LINE SPACING
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -174,7 +171,6 @@ fun ReaderAppearanceBottomSheet(
                 }
             }
 
-            // 4. TEXT ALIGNMENT
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,7 +197,6 @@ fun ReaderAppearanceBottomSheet(
 
             HorizontalDivider()
 
-            // 5. THEME MODE
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
