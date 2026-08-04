@@ -1,5 +1,14 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.util.Properties
+import java.io.FileInputStream
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -37,6 +46,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFilePath = localProperties.getProperty("KEYSTORE_FILE")
+            if (keystoreFilePath != null) {
+                storeFile = file(keystoreFilePath)
+                storePassword = localProperties.getProperty("KEYSTORE_PASSWORD")
+                keyAlias = localProperties.getProperty("KEY_ALIAS")
+                keyPassword = localProperties.getProperty("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -44,6 +65,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
@@ -70,33 +92,18 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     
-    // Material 3
     implementation("androidx.compose.material3:material3:1.4.0-alpha01")
-
-    // Material Icons Extended
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
-
-    // Splashscreen
     implementation("androidx.core:core-splashscreen:1.0.1")
 
-    // Navigation Compose
     implementation(libs.androidx.navigation.compose)
-
-    // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-
-    // Coil (Image Loading)
     implementation(libs.coil.compose)
 
-    // Documentfile
     implementation("androidx.documentfile:documentfile:1.0.1")
-
-    // Data store
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-
-    // NanoHttpd
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     testImplementation(libs.junit)
