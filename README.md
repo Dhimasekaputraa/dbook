@@ -38,7 +38,7 @@
 2. Sync Gradle and build the project:
    ```bash
    ./gradlew assembleDebug
-3. Run the app on your emulator or Android device.
+3. Run the app on your emulator or install it on your Android device.
 
 ---
 
