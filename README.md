@@ -19,9 +19,9 @@
 
 ## Screenshots
 
-| Home Screen | Reader Screen | Share as Image |
-|:-----------:|:-------------:|:-------------:|
-| <img src="app/src/main/assets/screenshots/Screenshot_20260805-013553_DBook.png" width="310"/> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-012940_DBook.png" width="310" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-013246_DBook.png" width="310" />
+| Home Screen | Reader Screen | Reader Customization | Share as Image |
+|:-----------:|:-------------:|:-------------:|:-------------:|
+| <img src="app/src/main/assets/screenshots/Screenshot_20260805-013553_DBook.png" width="250"/> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-012940_DBook.png" width="250" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-021748_DBook.png" width="250" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-013246_DBook.png" width="250" />
 
 ---
 
