@@ -42,10 +42,11 @@ git clone https://github.com/Dhimasekaputraa/dbook.git
 cd dbook
 ```
 
-Prepare Your Android Device / Emulator
+2. Prepare Your Android Device / Emulator
 * For Physical Device: Enable Developer Options on your phone. Then, turn on USB Debugging. Connect your phone via USB and allow debugging permissions on your device screen.
 * For Emulator: Create an Android Virtual Device (AVD) via Android Studio's Device Manager (Recommended: Pixel device running API 30+).
 
+3. Build the APK
 Option A: Using Android Studio (GUI)
 
 - Open Android Studio, click Open, and select the cloned dbook directory.
