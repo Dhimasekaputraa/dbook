@@ -4,7 +4,7 @@
   <img src="app/src/main/ic_launcher-playstore.png" alt="DBook Logo" width="120" height="120">
 </p>
 
-<p align="center">Read anywhere without distraction with your essential book reader</p>
+<p align="center">Read anywhere with your essential book reader</p>
 
 ---
 
