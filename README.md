@@ -47,16 +47,16 @@ cd dbook
 * For Emulator: Create an Android Virtual Device (AVD) via Android Studio's Device Manager (Recommended: Pixel device running API 30+).
 
 3. Build the APK
-Option A: Using Android Studio (GUI)
 
+Option A: Using Android Studio (GUI)
 - Open Android Studio, click Open, and select the cloned dbook directory.
 - Let Gradle sync to complete.
 - Select your connected device/emulator from the top toolbar dropdown.
 - Click Run (Shift + F10) to build, install, and launch the app.
 
 Option B: Using Command Line (CLI)
-Ensure your emulator is running or your physical device is connected via USB debugging (adb devices), then:
 
+Ensure your emulator is running or your physical device is connected via USB debugging (adb devices), then:
 - Build & Install Directly to Device
   
 **Linux / macOS**
