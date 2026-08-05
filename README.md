@@ -12,6 +12,7 @@
 
 * **Highlights & Annotations**: Select text, save highlights with custom colors, and manage your annotations.
 * **In-Book Search**: Easily search for words or phrases within the book with dynamic text highlighting.
+* **Customizable Reader:** Change your font type, text sizes, line spacing, and dark mode for reader screen.
 * **Share Text as Image**: Highlight your favorite quotes and share them directly as images.
 * **Auto Sync Reading Progress**: Automatically saves and restores your last read location and percentage.
   
@@ -28,17 +29,55 @@
 ## Building from Source
 
 ### Prerequisites
-* JDK 17
+Ensure you have the following prerequisites installed before starting:
+* JDK 21 or higher
 * Android SDK Version 26+ (Android 8.0 Oreo or higher)
+* Git
 
 ### Steps
+
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/Dhimasekaputraa/dbook.git
-2. Sync Gradle and build the project:
-   ```bash
-   ./gradlew assembleDebug
-3. Run the app on your emulator or install it on your Android device.
+```bash
+git clone https://github.com/Dhimasekaputraa/dbook.git
+cd dbook
+```
+
+Prepare Your Android Device / Emulator
+* For Physical Device: Enable Developer Options on your phone. Then, turn on USB Debugging. Connect your phone via USB and allow debugging permissions on your device screen.
+* For Emulator: Create an Android Virtual Device (AVD) via Android Studio's Device Manager (Recommended: Pixel device running API 30+).
+
+Option A: Using Android Studio (GUI)
+
+- Open Android Studio, click Open, and select the cloned dbook directory.
+- Let Gradle sync to complete.
+- Select your connected device/emulator from the top toolbar dropdown.
+- Click Run (Shift + F10) to build, install, and launch the app.
+
+Option B: Using Command Line (CLI)
+Ensure your emulator is running or your physical device is connected via USB debugging (adb devices), then:
+
+- Build & Install Directly to Device
+  
+**Linux / macOS**
+```bash
+./gradlew installDebug
+```
+**Windows**
+```powershell
+gradlew.bat installDebug
+```
+
+- or Build APK Only (Without Installing)
+  
+**Linux / macOS**
+```bash
+./gradlew assembleDebug
+```
+**Windows**
+```powershell
+gradlew.bat assembleDebug
+```
+The compiled APK will be available at: ``app/build/outputs/apk/debug/app-debug.apk``
 
 ---
 
