@@ -10,11 +10,11 @@
 
 ## Features
 
-* **Material 3 UI**: Modern user interface with full Light and Dark theme support.
 * **Highlights & Annotations**: Select text, save highlights with custom colors, and manage your annotations.
 * **In-Book Search**: Easily search for words or phrases within the book with dynamic text highlighting.
 * **Share Text as Image**: Highlight your favorite quotes and share them directly as images.
-* **Reading Progress Tracking**: Automatically saves and restores your last read location and percentage.
+* **Auto Sync Reading Progress**: Automatically saves and restores your last read location and percentage.
+  
 ---
 
 ## Screenshots
