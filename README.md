@@ -80,6 +80,24 @@ gradlew.bat assembleDebug
 ```
 The compiled APK will be available at: ``app/build/outputs/apk/debug/app-debug.apk``
 
+If you want to build signed Release APKs locally, add your keystore credentials to local.properties and update the local properties :
+```bash
+KEYSTORE_FILE=/pathtoyourkeystore/.jks
+KEYSTORE_PASSWORD=your_keystore_password
+KEY_ALIAS=your_key_alias
+KEY_PASSWORD=your_key_password
+```
+Then to build the release APK
+
+**Linux / macOS**
+```bash
+./gradlew assembleRelease
+```
+**Windows**
+```powershell
+gradlew.bat assembleRelease
+```
+
 ---
 
 ## Download
