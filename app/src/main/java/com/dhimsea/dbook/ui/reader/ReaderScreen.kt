@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +73,9 @@ import com.dhimsea.dbook.domain.model.Annotation
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.repository.BookRepository
 import com.dhimsea.dbook.ui.components.QuoteShareDialog
+import com.dhimsea.dbook.data.repository.DictionaryRepository
+import com.dhimsea.dbook.domain.model.DictionaryUiState
+import com.dhimsea.dbook.ui.components.DictionaryDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -240,6 +244,12 @@ fun ReaderScreen(
     var quoteTextToShare by remember { mutableStateOf("") }
     var bookTitleToShare by remember { mutableStateOf("") }
     var bookAuthorToShare by remember { mutableStateOf("") }
+
+    var showDictionaryDialog by remember { mutableStateOf(false) }
+    var selectedWordForDictionary by remember { mutableStateOf("") }
+    var dictionaryUiState by remember { mutableStateOf<DictionaryUiState>(DictionaryUiState.Loading) }
+
+    val dictionaryRepository = remember { DictionaryRepository() }
 
     val presetColors = listOf(
         "#FFEB3B" to Color(0xFFFFEB3B),
@@ -553,6 +563,18 @@ fun ReaderScreen(
         showNoteDialog = false
     }
 
+    fun onTriggerDefine(word: String) {
+        selectedWordForDictionary = word
+        showDictionaryDialog = true
+        dictionaryUiState = DictionaryUiState.Loading
+
+        scope.launch {
+            dictionaryUiState = dictionaryRepository.getDefinition(word)
+        }
+    }
+
+
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -805,28 +827,26 @@ fun ReaderScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val textToSearch = pendingSelection?.text ?: ""
+                                    val selectedText = pendingSelection?.text ?: ""
                                     pendingSelection = null
                                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
 
-                                    if (textToSearch.isNotEmpty()) {
-                                        pendingSearchQuery = textToSearch
-                                        isSearching = true
-                                        val escaped = textToSearch.replace("\\", "\\\\").replace("'", "\\'")
-                                        webViewRef?.evaluateJavascript("searchInBook('$escaped');", null)
+                                    if (selectedText.isNotEmpty()) {
+                         
+                                        onTriggerDefine(selectedText)
                                     }
                                 }
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
+                                imageVector = Icons.Default.MenuBook,
+                                contentDescription = "Define",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
-                                text = "Search in Book",
+                                text = "Define",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -1004,6 +1024,16 @@ fun ReaderScreen(
                     pendingSelection = null
                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
                 }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDictionaryDialog) {
+        DictionaryDialog(
+            selectedWord = selectedWordForDictionary,
+            uiState = dictionaryUiState,
+            onDismissRequest = {
+                showDictionaryDialog = false
             }
         )
     }
