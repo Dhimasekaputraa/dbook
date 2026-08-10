@@ -14,6 +14,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.os.Parcelable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -75,10 +76,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.parcelize.Parcelize
 import org.json.JSONArray
 import java.net.URLEncoder
 
-data class ChapterMarker(val label: String, val percent: Float)
+@Parcelize
+data class ChapterMarker(
+    val label: String,
+    val percent: Float,
+    val pageNum: Int = 1,
+    val href: String = ""
+) : Parcelable
 
 data class PendingSelection(
     val cfi: String,
@@ -127,7 +135,9 @@ class ReaderBridge(
                     list.add(
                         ChapterMarker(
                             label = obj.getString("label"),
-                            percent = obj.getDouble("percent").toFloat()
+                            percent = obj.optDouble("percent", 0.0).toFloat(),
+                            pageNum = obj.optInt("pageNum", 1),
+                            href = obj.optString("href", "")
                         )
                     )
                 }
@@ -171,11 +181,15 @@ class ReaderBridge(
 fun ReaderScreen(
     filePath: String,
     initialCfiToJump: String? = null,
+    targetPercentToJump: Float? = null,
+    targetHrefToJump: String? = null,
     searchQueryToHighlight: String? = null,
     bookRepository: BookRepository,
     onOpenAnnotationScreen: (Long) -> Unit,
+    onOpenTocScreen: (Long, List<ChapterMarker>, String) -> Unit,
     onNavigateToSearch: (Long, String, String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onHrefJumpHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -226,6 +240,182 @@ fun ReaderScreen(
         "#E91E63" to Color(0xFFE91E63)
     )
 
+    val webView = remember(context) {
+        object : WebView(context) {
+            private val emptyActionModeCallback = object : ActionMode.Callback {
+                override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                    menu?.clear()
+                    return true
+                }
+                override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
+                    menu?.clear()
+                    return true
+                }
+                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) = false
+                override fun onDestroyActionMode(mode: ActionMode?) {}
+            }
+
+            override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
+                return super.startActionMode(emptyActionModeCallback)
+            }
+
+            override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
+                return super.startActionMode(emptyActionModeCallback, type)
+            }
+        }.apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+
+            setBackgroundColor(if (readerSettings.isDarkMode) AndroidColor.parseColor("#121212") else AndroidColor.parseColor("#ffffff"))
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                @Suppress("DEPRECATION")
+                allowFileAccessFromFileURLs = true
+                @Suppress("DEPRECATION")
+                allowUniversalAccessFromFileURLs = true
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                cacheMode = WebSettings.LOAD_NO_CACHE
+            }
+
+            addJavascriptInterface(ReaderBridge(
+                onProgressUpdate = { page, total, percent, chapter, cfi ->
+                    currentPage = page
+                    totalPages = total
+                    currentPercent = percent
+                    currentChapter = chapter
+                    latestCfi = cfi
+
+                    Log.d("DBOOK_DEBUG", "UPDATE PROGRESS -> Page: $page | CFI Baru: $cfi")
+
+                    currentBook?.let { book ->
+                        scope.launch(Dispatchers.IO) {
+                            bookRepository.updateReadingProgress(bookId = book.id, page = page, cfi = cfi, progress = percent)
+                        }
+                    }
+                },
+                onToggleOverview = { isOverviewMode = !isOverviewMode },
+                onOpenOverview = { isOverviewMode = true },
+                onCloseOverview = { isOverviewMode = false },
+                onChaptersLoaded = { chapterList -> chapters = chapterList },
+                onTextSelected = { cfi, text, posX, posY, bottomY ->
+                    pendingSelection = PendingSelection(cfi, text, posX, posY, bottomY)
+                },
+                onSelectionCleared = {
+                    pendingSelection = null
+                },
+                onIndexingProgressUpdate = { percent ->
+                    indexingProgress = percent
+                    if (percent >= 100) {
+                        isIndexing = false
+                    }
+                },
+                onSearchFinished = { jsonResults ->
+                    isSearching = false
+                    val bookId = currentBook?.id
+                    val query = pendingSearchQuery
+
+                    if (bookId != null && query != null) {
+                        onNavigateToSearch(bookId, query, jsonResults)
+                    }
+                    pendingSearchQuery = null
+                },
+                onOpenQuoteShare = { quoteText, title, author ->
+                    quoteTextToShare = quoteText
+                    bookTitleToShare = title.ifBlank { currentBook?.title ?: "Unknown Title" }
+                    bookAuthorToShare = author.ifBlank { currentBook?.author ?: "Unknown Author" }
+                    showQuoteShareDialog = true
+                }
+            ), "Android")
+
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        if (!url.contains("127.0.0.1:8080")) {
+                            try {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                context.startActivity(intent)
+                                return true
+                            } catch (e: Exception) {
+                                Log.e("ReaderScreen", "Failed to open browser: ${e.message}")
+                            }
+                        }
+                    }
+                    return false
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    isLoading = false
+
+                    val initScript = "javascript:updateTextFormatting('${readerSettings.fontFamily}', ${readerSettings.fontSize}, ${readerSettings.lineHeight}, '${readerSettings.textAlign}', ${readerSettings.isDarkMode});"
+                    view?.evaluateJavascript(initScript, null)
+
+                    if (!targetHrefToJump.isNullOrEmpty()) {
+                        Log.d("DBOOK_DEBUG", "WebView Selesai Load -> Eksekusi Jump Href: $targetHrefToJump")
+                        val escapedHref = targetHrefToJump.replace("'", "\\'")
+                        
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            view?.evaluateJavascript("javascript:goToChapterHref('$escapedHref');") {
+                                Log.d("DBOOK_DEBUG", "Navigasi Href Selesai Dieksekusi ke JS")
+                                onHrefJumpHandled()
+                            }
+                        }, 500)
+                    } 
+
+                    else if (!initialCfiToJump.isNullOrEmpty()) {
+                        val query = searchQueryToHighlight ?: ""
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            view?.evaluateJavascript(
+                                "javascript:goToSearchResult('$initialCfiToJump', '$query');",
+                                null
+                            )
+                        }, 400)
+                    }
+
+                    currentBook?.id?.let { bookId ->
+                        scope.launch(Dispatchers.IO) {
+                            bookRepository.getAnnotationsForBook(bookId).collect { annotations ->
+                                val jsonArray = JSONArray()
+                                annotations.forEach { item ->
+                                    val obj = org.json.JSONObject().apply {
+                                        put("id", item.id)
+                                        put("cfi", item.cfi)
+                                        put("colorHex", item.colorHex)
+                                    }
+                                    jsonArray.put(obj)
+                                }
+                                launch(Dispatchers.Main) {
+                                    view?.evaluateJavascript("loadAnnotations('${jsonArray.toString()}');", null)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(webView) {
+        webViewRef = webView
+    }
+
+    LaunchedEffect(isServerReady, currentBook) {
+        if (isServerReady && currentBook != null && webView.url == null) {
+            val targetCfi = initialCfiToJump ?: currentBook?.lastReadCfi
+            val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
+            val bookIdParam = currentBook?.id ?: 0L
+
+            Log.d("DBOOK_DEBUG", "=== LOAD READER INITIAL ===")
+            webView.loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi&bookId=$bookIdParam")
+        }
+    }
+
     LaunchedEffect(isOverviewMode) {
         webViewRef?.evaluateJavascript("javascript:setOverviewState($isOverviewMode);", null)
     }
@@ -243,17 +433,23 @@ fun ReaderScreen(
         readerSettings.lineHeight,
         readerSettings.textAlign
     ) {
-        webViewRef?.let { webView ->
+        webViewRef?.let { webViewInstance ->
             val script = "javascript:updateTextFormatting('${readerSettings.fontFamily}', ${readerSettings.fontSize}, ${readerSettings.lineHeight}, '${readerSettings.textAlign}', ${readerSettings.isDarkMode});"
-            webView.evaluateJavascript(script, null)
+            webViewInstance.evaluateJavascript(script, null)
         }
     }
 
     LaunchedEffect(initialCfiToJump) {
         if (!initialCfiToJump.isNullOrEmpty()) {
-            Log.d("DBOOK_DEBUG", "LaunchedEffect triggered for CFI: $initialCfiToJump")
             delay(500)
             webViewRef?.evaluateJavascript("goToSearchResult('$initialCfiToJump', '$searchQueryToHighlight');", null)
+        }
+    }
+
+    LaunchedEffect(targetPercentToJump) {
+        targetPercentToJump?.let { percent ->
+            delay(300)
+            webViewRef?.evaluateJavascript("javascript:goToPercent($percent);", null)
         }
     }
 
@@ -297,7 +493,6 @@ fun ReaderScreen(
     DisposableEffect(Unit) {
         onDispose {
             Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
-            Log.d("DBOOK_DEBUG", "Saving final CFI to DB: $latestCfi")
             if (server.isAlive) server.stop()
 
             if (window != null) {
@@ -324,17 +519,13 @@ fun ReaderScreen(
         pendingSearchQuery = query
         isSearching = true
 
-        val escaped = query
-            .replace("\\", "\\\\")
-            .replace("'", "\\'")
+        val escaped = query.replace("\\", "\\\\").replace("'", "\\'")
         webViewRef?.evaluateJavascript("searchInBook('$escaped');", null)
     }
 
     fun saveAnnotation(colorHex: String, noteText: String = "") {
         val currentSelection = pendingSelection ?: return
         val bookId = currentBook?.id ?: return
-
-        Log.d("DBOOK_DEBUG", "Saving annotation with CFI: ${currentSelection.cfi}")
 
         scope.launch(Dispatchers.IO) {
             val newAnnotation = Annotation(
@@ -455,7 +646,6 @@ fun ReaderScreen(
             }
         }
 
-    
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -471,171 +661,7 @@ fun ReaderScreen(
             if (isServerReady) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        object : WebView(ctx) {
-                            private val emptyActionModeCallback = object : ActionMode.Callback {
-                                override fun onCreateActionMode(mode: ActionMode?, menu: Menu?): Boolean {
-                                    menu?.clear()
-                                    return true
-                                }
-                                override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?): Boolean {
-                                    menu?.clear()
-                                    return true
-                                }
-                                override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) = false
-                                override fun onDestroyActionMode(mode: ActionMode?) {}
-                            }
-
-                            override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
-                                return super.startActionMode(emptyActionModeCallback)
-                            }
-
-                            override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
-                                return super.startActionMode(emptyActionModeCallback, type)
-                            }
-
-                        }.apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-
-                            setBackgroundColor(if (readerSettings.isDarkMode) AndroidColor.parseColor("#121212") else AndroidColor.parseColor("#ffffff"))
-
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                allowFileAccess = true
-                                allowContentAccess = true
-                                @Suppress("DEPRECATION")
-                                allowFileAccessFromFileURLs = true
-                                @Suppress("DEPRECATION")
-                                allowUniversalAccessFromFileURLs = true
-                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                cacheMode = WebSettings.LOAD_NO_CACHE
-                            }
-
-                            addJavascriptInterface(ReaderBridge(
-                                onProgressUpdate = { page, total, percent, chapter, cfi ->
-                                    currentPage = page
-                                    totalPages = total
-                                    currentPercent = percent
-                                    currentChapter = chapter
-                                    latestCfi = cfi
-
-                                    Log.d("DBOOK_DEBUG", "UPDATE PROGRESS -> Page: $page | CFI Baru: $cfi")
-
-                                    currentBook?.let { book ->
-                                        scope.launch(Dispatchers.IO) {
-                                            bookRepository.updateReadingProgress(bookId = book.id, page = page, cfi = cfi, progress = percent)
-                                        }
-                                    }
-                                },
-                                onToggleOverview = { isOverviewMode = !isOverviewMode },
-                                onOpenOverview = { isOverviewMode = true },
-                                onCloseOverview = { isOverviewMode = false },
-                                onChaptersLoaded = { chapterList -> chapters = chapterList },
-                                onTextSelected = { cfi, text, posX, posY, bottomY ->
-                                    pendingSelection = PendingSelection(cfi, text, posX, posY, bottomY)
-                                },
-                                onSelectionCleared = {
-                                    pendingSelection = null
-                                },
-                                onIndexingProgressUpdate = { percent ->
-                                    indexingProgress = percent
-                                    if (percent >= 100) {
-                                        isIndexing = false
-                                    }
-                                },
-                                onSearchFinished = { jsonResults ->
-                                    isSearching = false
-                                    val bookId = currentBook?.id
-                                    val query = pendingSearchQuery
-
-                                    Log.d("DBOOK_DEBUG", "Hasil pencarian diterima: $jsonResults")
-                                    Log.d("DBOOK_DEBUG", "Panjang teks JSON dari JS: ${jsonResults.length}")
-                                    
-                                    if (bookId != null && query != null) {
-                                        onNavigateToSearch(bookId, query, jsonResults)
-                                    }
-                                    pendingSearchQuery = null
-                                },
-                                onOpenQuoteShare = { quoteText, title, author ->
-                                    quoteTextToShare = quoteText
-                                    bookTitleToShare = title.ifBlank { currentBook?.title ?: "Unknown Title" }
-                                    bookAuthorToShare = author.ifBlank { currentBook?.author ?: "Unknown Author" }
-                                    showQuoteShareDialog = true
-                                }
-                            ), "Android")
-
-                            webViewClient = object : WebViewClient() {
-
-                                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
-                                    val url = request?.url?.toString() ?: return false
-
-                                    if (url.startsWith("http://") || url.startsWith("https://")) {
-                                        if (!url.contains("127.0.0.1:8080")) {
-                                            try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                                                context.startActivity(intent)
-                                                return true
-                                            } catch (e: Exception) {
-                                                Log.e("ReaderScreen", "Failed to open browser: ${e.message}")
-                                            }
-                                        }
-                                    }
-                                    return false
-                                }
-
-                                override fun onPageFinished(view: WebView?, url: String?) {
-                                    isLoading = false
-
-                                    val initScript = "javascript:updateTextFormatting('${readerSettings.fontFamily}', ${readerSettings.fontSize}, ${readerSettings.lineHeight}, '${readerSettings.textAlign}', ${readerSettings.isDarkMode});"
-                                    view?.evaluateJavascript(initScript, null)
-
-                                    if (!initialCfiToJump.isNullOrEmpty()) {
-                                        val query = searchQueryToHighlight ?: ""
-                                        Handler(Looper.getMainLooper()).postDelayed({
-                                            view?.evaluateJavascript(
-                                                "javascript:goToSearchResult('$initialCfiToJump', '$query');",
-                                                null
-                                            )
-                                        }, 400)
-                                    }
-
-                                    currentBook?.id?.let { bookId ->
-                                        scope.launch(Dispatchers.IO) {
-                                            bookRepository.getAnnotationsForBook(bookId).collect { annotations ->
-                                                val jsonArray = JSONArray()
-                                                annotations.forEach { item ->
-                                                    val obj = org.json.JSONObject().apply {
-                                                        put("id", item.id)
-                                                        put("cfi", item.cfi)
-                                                        put("colorHex", item.colorHex)
-                                                    }
-                                                    jsonArray.put(obj)
-                                                }
-                                                launch(Dispatchers.Main) {
-                                                    view?.evaluateJavascript("loadAnnotations('${jsonArray.toString()}');", null)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            val targetCfi = initialCfiToJump ?: currentBook?.lastReadCfi
-                            val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
-                            val bookIdParam = currentBook?.id ?: 0L
-
-                            Log.d("DBOOK_DEBUG", "=== LOAD READER ===")
-                            Log.d("DBOOK_DEBUG", "Book ID: $bookIdParam")
-                            Log.d("DBOOK_DEBUG", "Target CFI dari DB: $targetCfi")
-
-                            loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi&bookId=$bookIdParam")
-                            webViewRef = this
-                        }
-                    }
+                    factory = { webView }
                 )
             }
 
@@ -725,7 +751,6 @@ fun ReaderScreen(
                             .width(220.dp)
                             .padding(vertical = 8.dp)
                     ) {
-
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -779,10 +804,7 @@ fun ReaderScreen(
                                     if (textToSearch.isNotEmpty()) {
                                         pendingSearchQuery = textToSearch
                                         isSearching = true
-                                        
-                                        val escaped = textToSearch
-                                            .replace("\\", "\\\\")
-                                            .replace("'", "\\'")
+                                        val escaped = textToSearch.replace("\\", "\\\\").replace("'", "\\'")
                                         webViewRef?.evaluateJavascript("searchInBook('$escaped');", null)
                                     }
                                 }
@@ -851,7 +873,12 @@ fun ReaderScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp)
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            currentBook?.id?.let { id -> onOpenTocScreen(id, chapters, currentChapter) }
+                        }
+                        .padding(bottom = 6.dp)
                 )
 
                 Row(
@@ -868,19 +895,11 @@ fun ReaderScreen(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Box(
-                        modifier = Modifier.weight(1f).height(32.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(32.dp),
                         contentAlignment = Alignment.CenterStart
                     ) {
-                        BoxWithConstraints(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp)
-                        ) {
-                            val totalWidth = maxWidth
-                            chapters.forEach { chapter ->
-                                val dotOffset = totalWidth * chapter.percent
-                                Box(modifier = Modifier.offset(x = dotOffset).size(5.dp).background(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), shape = CircleShape))
-                            }
-                        }
-
                         Slider(
                             value = currentPercent,
                             onValueChange = { currentPercent = it },

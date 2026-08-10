@@ -122,7 +122,6 @@
 
         attachContainerScrollWatcher();
 
-        // FIX 1: Kunci cache stabil murni berdasarkan bookIdParam
         function getLocationsCacheKey() {
             return "epub_location_v2_" + bookIdParam;
         }
@@ -272,7 +271,6 @@
                 }
             });
 
-            rendition.relocate();
             setTimeout(function() {
                 snapContainerToPage();
             }, 200);
@@ -288,46 +286,107 @@
             }
         }
 
-        // FIX 2: Alur Inisialisasi Murni Tunggal
         book.ready.then(function() {
             return loadOrGenerateLocations();
         }).then(function() {
             attachContainerScrollWatcher();
             patchManagerNextTolerance(); 
+
             var chapterList = [];
             
-            try {
-                function parseNavItems(items) {
-                    if (!items) return;
-                    items.forEach(function(item) {
-                        var cfi = book.locations.cfiFromHref(item.href);
+            function parseNavItems(items) {
+                if (!items || items.length === 0) return Promise.resolve([]);
+
+                return Promise.all(items.map(function(item) {
+                    var labelText = item.label ? item.label.trim() : "";
+                    var pct = 0;
+                    var page = 1;
+                    var hrefTarget = item.href || "";
+
+                    var parts = hrefTarget.split('#');
+                    var cleanHref = parts[0];
+                    var elementId = parts.length > 1 ? parts[1] : null;
+
+                    var spineSection = book.spine.get(hrefTarget) || book.spine.get(cleanHref);
+                    var loadPromise = (spineSection && !spineSection.document) 
+                        ? spineSection.load(book.load.bind(book)) 
+                        : Promise.resolve();
+
+                    return loadPromise.then(function() {
+                        var cfi = null;
+
+                        if (spineSection) {
+                            if (elementId && spineSection.document) {
+                                var targetEl = spineSection.document.getElementById(elementId) || 
+                                               spineSection.document.querySelector('[name="' + elementId + '"]');
+                                if (targetEl && spineSection.cfiFromElement) {
+                                    cfi = spineSection.cfiFromElement(targetEl);
+                                }
+                            }
+                            if (!cfi && spineSection.cfiFromElement) {
+                                cfi = spineSection.cfiFromElement(spineSection.document ? spineSection.document.body : null);
+                            }
+                        }
+
+                        if (!cfi && book.locations) {
+                            cfi = book.locations.cfiFromHref(hrefTarget);
+                        }
+
                         if (cfi) {
-                            var pct = book.locations.percentageFromCfi(cfi);
-                            chapterList.push({ label: item.label.trim(), percent: pct });
+                            pct = book.locations.percentageFromCfi(cfi) || 0;
+                            var rawPage = book.locations.locationFromCfi(cfi);
+                            if (rawPage && rawPage > 0) page = rawPage;
+                        } else if (spineSection) {
+                            var totalSpine = book.spine.length || 1;
+                            var totalLocs = book.locations.total || 100;
+                            pct = (spineSection.index / totalSpine);
+                            page = Math.max(1, Math.round(pct * totalLocs));
                         }
+
+                        var nodeResult = [];
+                        if (labelText.length > 0) {
+                            nodeResult.push({ 
+                                label: labelText, 
+                                percent: pct, 
+                                pageNum: page,
+                                href: hrefTarget 
+                            });
+                        }
+
                         if (item.subitems && item.subitems.length > 0) {
-                            parseNavItems(item.subitems);
+                            return parseNavItems(item.subitems).then(function(subResults) {
+                                return nodeResult.concat(subResults);
+                            });
                         }
+                        return nodeResult;
+                    }).catch(function(err) {
+                        console.log("TOC item parsing error:", item.label, err);
+                        return [];
                     });
-                }
+                })).then(function(resultsArray) {
 
-                if (book.navigation && book.navigation.toc) {
-                    parseNavItems(book.navigation.toc);
-                }
-            } catch (err) {
-                console.log("Chapter parsing error (non-fatal):", err);
+                    return [].concat.apply([], resultsArray);
+                });
             }
 
-            if (window.Android && window.Android.onChaptersLoaded) {
-                try { window.Android.onChaptersLoaded(JSON.stringify(chapterList)); } catch(e) {}
-            }
+            var parsePromise = (book.navigation && book.navigation.toc) 
+                ? parseNavItems(book.navigation.toc) 
+                : Promise.resolve([]);
 
-            // Jalankan rendition.display HANYA SATU KALI
-            var targetToDisplay = (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") 
-                ? decodeURIComponent(initialCfi) 
-                : undefined;
+            return parsePromise.then(function(finalChapters) {
+                chapterList = finalChapters;
+                console.log("[DBOOK_DEBUG] Parsed TOC Chapters count:", chapterList.length);
 
-            return rendition.display(targetToDisplay);
+                if (window.Android && window.Android.onChaptersLoaded) {
+                    try { window.Android.onChaptersLoaded(JSON.stringify(chapterList)); } catch(e) {}
+                }
+
+                var targetToDisplay = (initialCfi && initialCfi !== "null" && initialCfi !== "" && initialCfi !== "undefined") 
+                    ? decodeURIComponent(initialCfi) 
+                    : undefined;
+
+                return rendition.display(targetToDisplay);
+            });
         }).catch(function(err) {
             console.log("Book ready chain error:", err);
             if (window.Android && window.Android.onIndexingProgress) {
@@ -851,6 +910,85 @@
             rendition.display(cfi);
         }
 
+        var isBookRendered = false;
+        var pendingHreToJump = null;
+
+        rendition.started.then(function() {
+            isBookRendered = true;
+            if (pendingHrefToJump) {
+                console.log("[DBOOK_JS] Processing pending jump href:", pendingHrefToJump);
+                var target = pendingHrefToJump;
+                pendingHrefToJump = null;
+                executeChapterJump(target);
+            }
+        });
+
+        function goToChapterHref(href) {
+            if (!href) return;
+
+            if (isOverviewActive) {
+                setOverviewState(false);
+                if (window.Android && window.Android.closeOverview) {
+                    try { window.Android.closeOverview(); } catch(e) {}
+                }
+            }
+
+            if (!isBookRendered) {
+                console.log("[DBOOK_JS] ePub belum selesai render awal, mengantrikan href:", href);
+                pendingHrefToJump = href;
+                return;
+            }
+
+            executeChapterJump(href);
+        }
+
+        function executeChapterJump(href) {
+            try {
+                if (!href) return;
+
+                var parts = href.split('#');
+                var cleanHref = parts[0];
+                var elementId = parts.length > 1 ? parts[1] : null;
+
+                var spineSection = book.spine.get(href) || book.spine.get(cleanHref);
+
+                if (spineSection) {
+                    
+                    var loadPromise = spineSection.document 
+                        ? Promise.resolve() 
+                        : spineSection.load(book.load.bind(book));
+
+                    loadPromise.then(function() {
+                        var cfi = null;
+
+                        if (elementId && spineSection.document) {
+                            var targetEl = spineSection.document.getElementById(elementId) || 
+                                        spineSection.document.querySelector('[name="' + elementId + '"]');
+                            if (targetEl && spineSection.cfiFromElement) {
+                                cfi = spineSection.cfiFromElement(targetEl);
+                            }
+                        }
+
+                        if (cfi) {
+                            console.log("[DBOOK_JS] Lompat ke sub-chapter via CFI:", cfi);
+                            return rendition.display(cfi);
+                        }
+
+                        console.log("[DBOOK_JS] Lompat via href biasa:", href);
+                        return rendition.display(href);
+                    }).catch(function(err) {
+                        console.log("[DBOOK_JS] Error load section, fallback display href:", err);
+                        rendition.display(href);
+                    });
+                } else {
+                    rendition.display(href);
+                }
+            } catch(e) {
+                console.log("executeChapterJump error:", e);
+                rendition.display(href);
+            }
+        }
+
         function applyHighlight(cfi, colorHex) {
             try {
                 rendition.annotations.highlight(cfi, {}, function(e) {}, "highlight-" + Date.now(), {
@@ -883,7 +1021,6 @@
         var searchHighlightCfi = null;
         var isNavigatingToSearch = false;
 
-        // FIX 3: Lompatan hasil pencarian yang stabil tanpa trigger re-display ganda
         function goToSearchResult(cfi, searchText) {
             if (!cfi) return;
 

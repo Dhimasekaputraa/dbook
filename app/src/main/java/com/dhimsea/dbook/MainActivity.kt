@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -25,9 +26,11 @@ import com.dhimsea.dbook.ui.library.LibraryScreen
 import com.dhimsea.dbook.ui.library.LibraryViewModel
 import com.dhimsea.dbook.ui.library.LibraryViewModelFactory
 import com.dhimsea.dbook.ui.navigation.Screen
+import com.dhimsea.dbook.ui.reader.ChapterMarker
 import com.dhimsea.dbook.ui.reader.ReaderScreen
 import com.dhimsea.dbook.ui.search.SearchResultsScreen
 import com.dhimsea.dbook.ui.search.SearchViewModel
+import com.dhimsea.dbook.ui.toc.TocScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -92,24 +95,36 @@ class MainActivity : ComponentActivity() {
 
                         val cfiToJump = backStackEntry.savedStateHandle.get<String>("targetCfi")
                         val searchQuery = backStackEntry.savedStateHandle.get<String>("searchQuery")
+                        val targetPercent = backStackEntry.savedStateHandle.get<Float>("targetPercent")
+                        val targetHref = backStackEntry.savedStateHandle.get<String>("targetHref")
 
                         ReaderScreen(
                             filePath = decodedPath,
                             initialCfiToJump = cfiToJump,
+                            targetHrefToJump = targetHref,
+                            targetPercentToJump = targetPercent,
                             searchQueryToHighlight = searchQuery,
                             bookRepository = app.bookRepository,
                             onOpenAnnotationScreen = { bookId ->
                                 navController.navigate("annotation/$bookId")
                             },
+                            onOpenTocScreen = { bookId, chapterList, chapterName ->
+                                navController.currentBackStackEntry?.savedStateHandle?.apply {
+                                    set("chaptersList", chapterList)
+                                    set("currentChapterName", chapterName)
+                                }
+                                navController.navigate("toc/$bookId")
+                            },
                             onNavigateToSearch = { bookId, queryText, resultsJson ->
                                 val encodedQuery = URLEncoder.encode(queryText, StandardCharsets.UTF_8.toString())
                                 val encodedPathForSearch = URLEncoder.encode(decodedPath, StandardCharsets.UTF_8.toString())
                                 navController.navigate("search_results/$bookId/$encodedQuery/$encodedPathForSearch")
-                                navController.currentBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("resultsJson", resultsJson)
+                                navController.currentBackStackEntry?.savedStateHandle?.set("resultsJson", resultsJson)
                             },
-                            onBack = { navController.popBackStack() }
+                            onBack = { navController.popBackStack() },
+                            onHrefJumpHandled = {
+                                backStackEntry.savedStateHandle.remove<String>("targetHref")
+                            }
                         )
                     }
 
@@ -168,7 +183,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     
-
                     composable(
                         route = "annotation/{bookId}",
                         arguments = listOf(
@@ -208,6 +222,44 @@ class MainActivity : ComponentActivity() {
                                 annotationViewModel.deleteAnnotation(annotation)
                             },
                             onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(
+                        route = "toc/{bookId}",
+                        arguments = listOf(
+                            navArgument("bookId") { type = NavType.LongType }
+                        ),
+                        enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300)) },
+                        exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(250)) },
+                        popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300)) },
+                        popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(250)) }
+                    ) { backStackEntry ->
+                        val bookId = backStackEntry.arguments?.getLong("bookId") ?: 0L
+
+                        val previousBackStackEntry = remember(backStackEntry) {
+                            navController.getBackStackEntry(Screen.Reader.route)
+                        }
+
+                        LaunchedEffect(bookId) {
+                            annotationViewModel.loadBook(bookId)
+                        }
+                        val currentBook by annotationViewModel.book.collectAsState()
+
+                        val chapterList = previousBackStackEntry.savedStateHandle.get<List<ChapterMarker>>("chaptersList") ?: emptyList()
+                        val currentChapterName = previousBackStackEntry.savedStateHandle.get<String>("currentChapterName") ?: ""
+
+                        TocScreen(
+                            bookTitle = currentBook?.title ?: "Table of Contents",
+                            chapters = chapterList,
+                            currentChapter = currentChapterName,
+                            onChapterClick = { targetHref ->
+                                previousBackStackEntry.savedStateHandle["targetHref"] = targetHref
+                                navController.popBackStack() 
+                            },
+                            onBack = {
+                                navController.popBackStack()
+                            }
                         )
                     }
                 }
