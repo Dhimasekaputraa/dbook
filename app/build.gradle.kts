@@ -96,6 +96,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     
+    implementation("com.google.code.gson:gson:2.10.1")
     implementation("androidx.compose.material3:material3:1.4.0-alpha01")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.core:core-splashscreen:1.0.1")
