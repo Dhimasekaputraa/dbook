@@ -63,6 +63,8 @@
         var currentFontSize = 18;
         var isOverviewActive = false;
 
+        var chapterList = [];
+
         var isDraggingSelection = false;
         var selectionDebounceTimer = null;
         var scrollSnapTimer = null;
@@ -240,7 +242,8 @@
                     "padding": "36px 24px !important",
                     "font-family": selectedFont
                 },
-                "p:not(:has(img)):not(:has(svg))": { 
+                
+                "p:not([class*='title']):not([class*='subtitle']):not([class*='ct']):not([class*='txc']):not([epub\\:type*='title']):not([epub\\:type*='subtitle']):not(:has(img)):not(:has(svg))": { 
                     "color": text + " !important",
                     "font-size": fontSizePx + "px !important",
                     "line-height": lineHeight + " !important",
@@ -254,20 +257,29 @@
                     "line-height": lineHeight + " !important",
                     "font-family": selectedFont
                 },
+                
                 "h1, h2, h3, h4, h5, h6": {
                     "color": text + " !important",
+                    "text-align": "center !important",
                     "line-height": "1.3 !important",
-                    "margin-top": "1.2em !important",
+                    "margin-top": "0.8em !important",
                     "margin-bottom": "0.6em !important",
                     "font-family": selectedFont
+                },
+                
+                "[epub\\:type*='title'], [epub\\:type*='subtitle'], .subtitle, #subtitle, p.ct, p.txc, .pt": {
+                    "color": text + " !important",
+                    "text-align": "center !important",
+                    "font-family": selectedFont
+                },
+                
+                "img, svg, figure, picture": {
+                    "max-width": "100% !important",
+                    "height": "auto !important"
                 },
                 "a, a:link, a:visited, a:hover, a:active": {
                     "color": text + " !important",
                     "text-decoration": "underline"
-                },
-                "img, svg, figure": {
-                    "max-width": "100% !important",
-                    "height": "auto !important"
                 }
             });
 
@@ -292,7 +304,7 @@
             attachContainerScrollWatcher();
             patchManagerNextTolerance(); 
 
-            var chapterList = [];
+            chapterList = [];
             
             function parseNavItems(items) {
                 if (!items || items.length === 0) return Promise.resolve([]);
@@ -404,10 +416,23 @@
                 var currentCfi = location.start.cfi;
 
                 var chapterName = "Chapter";
-                var cleanHref = location.start.href.split('#')[0];
-                var navItem = book.navigation.get(location.start.href) || book.navigation.get(cleanHref);
-                if (navItem && navItem.label) {
-                    chapterName = navItem.label.trim();
+                var rawHref = location.start.href || "";
+                var cleanHref = rawHref.split('#')[0];
+
+                if (typeof chapterList !== "undefined" && chapterList.length > 0) {
+                    var matched = chapterList.find(function(c) {
+                        return c.href === rawHref || c.href === cleanHref || c.href.split('#')[0] === cleanHref;
+                    });
+                    if (matched && matched.label) {
+                        chapterName = matched.label;
+                    }
+                }
+
+                if (chapterName === "Chapter") {
+                    var navItem = book.navigation.get(rawHref) || book.navigation.get(cleanHref);
+                    if (navItem && navItem.label) {
+                        chapterName = navItem.label.trim();
+                    }
                 }
 
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
