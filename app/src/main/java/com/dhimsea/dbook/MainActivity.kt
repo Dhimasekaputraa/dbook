@@ -108,10 +108,11 @@ class MainActivity : ComponentActivity() {
                             onOpenAnnotationScreen = { bookId ->
                                 navController.navigate("annotation/$bookId")
                             },
-                            onOpenTocScreen = { bookId, chapterList, chapterName ->
+                            onOpenTocScreen = { bookId, chapterList, chapterName, pageNum ->
                                 navController.currentBackStackEntry?.savedStateHandle?.apply {
                                     set("chaptersList", chapterList)
                                     set("currentChapterName", chapterName)
+                                    set("currentPage", pageNum)
                                 }
                                 navController.navigate("toc/$bookId")
                             },
@@ -249,10 +250,13 @@ class MainActivity : ComponentActivity() {
                         val chapterList = previousBackStackEntry.savedStateHandle.get<List<ChapterMarker>>("chaptersList") ?: emptyList()
                         val currentChapterName = previousBackStackEntry.savedStateHandle.get<String>("currentChapterName") ?: ""
 
+                        val currentPageNum = previousBackStackEntry.savedStateHandle.get<Int>("currentPage") ?: 1
+
                         TocScreen(
                             bookTitle = currentBook?.title ?: "Table of Contents",
                             chapters = chapterList,
                             currentChapter = currentChapterName,
+                            currentPage = currentPageNum,
                             onChapterClick = { targetHref ->
                                 previousBackStackEntry.savedStateHandle["targetHref"] = targetHref
                                 navController.popBackStack() 

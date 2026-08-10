@@ -111,8 +111,16 @@ class ReaderBridge(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @JavascriptInterface
-    fun updateProgress(currentPage: Int, totalPages: Int, percent: Float, chapterName: String, cfi: String) {
-        mainHandler.post { onProgressUpdate(currentPage, totalPages, percent, chapterName, cfi) }
+    fun updateProgress(
+        page: Int,
+        total: Int,
+        percent: Float,
+        chapterName: String,
+        cfi: String
+    ) {
+        mainHandler.post {
+            onProgressUpdate(page, total, percent, chapterName, cfi)
+        }
     }
 
     @JavascriptInterface
@@ -186,7 +194,7 @@ fun ReaderScreen(
     searchQueryToHighlight: String? = null,
     bookRepository: BookRepository,
     onOpenAnnotationScreen: (Long) -> Unit,
-    onOpenTocScreen: (Long, List<ChapterMarker>, String) -> Unit,
+    onOpenTocScreen: (Long, List<ChapterMarker>, String, Int) -> Unit,
     onNavigateToSearch: (Long, String, String) -> Unit,
     onBack: () -> Unit,
     onHrefJumpHandled: () -> Unit = {}
@@ -876,7 +884,9 @@ fun ReaderScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
-                            currentBook?.id?.let { id -> onOpenTocScreen(id, chapters, currentChapter) }
+                            currentBook?.id?.let { id -> 
+                                onOpenTocScreen(id, chapters, currentChapter, currentPage)
+                            }
                         }
                         .padding(bottom = 6.dp)
                 )

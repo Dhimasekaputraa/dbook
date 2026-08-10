@@ -376,7 +376,6 @@
                         return [];
                     });
                 })).then(function(resultsArray) {
-
                     return [].concat.apply([], resultsArray);
                 });
             }
@@ -416,15 +415,75 @@
                 var currentCfi = location.start.cfi;
 
                 var chapterName = "Chapter";
+                var activeIndex = -1;
                 var rawHref = location.start.href || "";
                 var cleanHref = rawHref.split('#')[0];
+                var currentAnchor = rawHref.indexOf('#') !== -1 ? rawHref.split('#')[1] : null;
 
                 if (typeof chapterList !== "undefined" && chapterList.length > 0) {
-                    var matched = chapterList.find(function(c) {
-                        return c.href === rawHref || c.href === cleanHref || c.href.split('#')[0] === cleanHref;
-                    });
-                    if (matched && matched.label) {
-                        chapterName = matched.label;
+                    
+                    if (currentAnchor) {
+                        activeIndex = chapterList.findIndex(function(item) {
+                            return item.href === rawHref || (item.href && item.href.endsWith('#' + currentAnchor));
+                        });
+                    }
+
+                
+                    if (activeIndex === -1) {
+                        var docIndices = [];
+                        for (var i = 0; i < chapterList.length; i++) {
+                            if (chapterList[i].href && chapterList[i].href.split('#')[0] === cleanHref) {
+                                docIndices.push(i);
+                            }
+                        }
+
+                        if (docIndices.length > 0) {
+                            for (var j = docIndices.length - 1; j >= 0; j--) {
+                                var idx = docIndices[j];
+                                if (chapterList[idx].pageNum <= currentPage) {
+                                    activeIndex = idx;
+                                    break;
+                                }
+                            }
+                            if (activeIndex === -1) activeIndex = docIndices[0];
+                        }
+                    }
+
+                
+                    if (activeIndex === -1) {
+                        for (var k = 0; k < chapterList.length; k++) {
+                            var item = chapterList[k];
+                            var nextItem = chapterList[k + 1];
+
+                            if (item.pageNum <= currentPage) {
+                                if (!nextItem || nextItem.pageNum > currentPage) {
+                                    activeIndex = k;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                
+                    if (activeIndex !== -1) {
+                        var activeItem = chapterList[activeIndex];
+                        var itemCleanHref = activeItem.href ? activeItem.href.split('#')[0] : "";
+                        var isSubChapter = activeItem.href && activeItem.href.indexOf('#') !== -1;
+
+                        if (isSubChapter) {
+                            var parentItem = chapterList.find(function(item) {
+                                var pClean = item.href ? item.href.split('#')[0] : "";
+                                return pClean === itemCleanHref && (!item.href || item.href.indexOf('#') === -1);
+                            });
+
+                            if (parentItem && parentItem.label && parentItem.label.trim() !== activeItem.label.trim()) {
+                                chapterName = parentItem.label.trim() + ": " + activeItem.label.trim();
+                            } else {
+                                chapterName = activeItem.label.trim();
+                            }
+                        } else {
+                            chapterName = activeItem.label.trim();
+                        }
                     }
                 }
 
@@ -434,6 +493,8 @@
                         chapterName = navItem.label.trim();
                     }
                 }
+
+                console.log("[DBOOK_PROGRESS_DEBUG] Page:", currentPage, "| RawHref:", rawHref, "| ActiveIdx:", activeIndex, "| Name:", chapterName);
 
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
@@ -936,7 +997,7 @@
         }
 
         var isBookRendered = false;
-        var pendingHreToJump = null;
+        var pendingHrefToJump = null;
 
         rendition.started.then(function() {
             isBookRendered = true;
@@ -978,7 +1039,6 @@
                 var spineSection = book.spine.get(href) || book.spine.get(cleanHref);
 
                 if (spineSection) {
-                    
                     var loadPromise = spineSection.document 
                         ? Promise.resolve() 
                         : spineSection.load(book.load.bind(book));
