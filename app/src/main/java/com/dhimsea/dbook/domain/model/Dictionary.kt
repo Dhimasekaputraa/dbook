@@ -28,13 +28,21 @@ data class Definition(
     val antonyms: List<String>?
 )
 
+data class DefinitionItem(
+    val definition: String,
+    val example: String? = null
+)
+
+data class MeaningGroup(
+    val partOfSpeech: String,
+    val definitions: List<DefinitionItem>,
+    val synonyms: List<String> = emptyList()
+)
+
 data class DefinitionResult(
     val word: String,
     val phonetic: String?,
-    val partOfSpeech: String?,
-    val definition: String,
-    val example: String?,
-    val synonyms: List<String>
+    val meanings: List<MeaningGroup>
 )
 
 sealed interface DictionaryUiState {

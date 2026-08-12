@@ -98,7 +98,7 @@ fun DictionaryDialog(
 @Composable
 private fun DictionarySuccessContent(data: DefinitionResult) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -121,63 +121,47 @@ private fun DictionarySuccessContent(data: DefinitionResult) {
             }
         }
 
-        if (!data.partOfSpeech.isNullOrBlank()) {
+        HorizontalDivider()
+
+        data.meanings.forEach { meaning ->
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(6.dp)
             ) {
                 Text(
-                    text = data.partOfSpeech,
+                    text = meaning.partOfSpeech,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-        }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            meaning.definitions.forEachIndexed { index, defItem ->
+                Text(
+                    text = "${index + 1}. ${defItem.definition}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-        Text(
-            text = "Definition",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = data.definition,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+                if (!defItem.example.isNullOrBlank()) {
+                    Text(
+                        text = "   \"${defItem.example}\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
 
-        if (!data.example.isNullOrBlank()) {
+            if (meaning.synonyms.isNotEmpty()) {
+                Text(
+                    text = "Synonyms: ${meaning.synonyms.take(4).joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Example:",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "\"${data.example}\"",
-                style = MaterialTheme.typography.bodyMedium,
-                fontStyle = FontStyle.Italic,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (data.synonyms.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Synonyms:",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = data.synonyms.take(5).joinToString(", "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))

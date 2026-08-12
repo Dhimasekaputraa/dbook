@@ -1,8 +1,10 @@
 package com.dhimsea.dbook.data.repository
 
+import com.dhimsea.dbook.domain.model.DefinitionItem
 import com.dhimsea.dbook.domain.model.DefinitionResult
 import com.dhimsea.dbook.domain.model.DictionaryResponse
 import com.dhimsea.dbook.domain.model.DictionaryUiState
+import com.dhimsea.dbook.domain.model.MeaningGroup
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +32,6 @@ class DictionaryRepository(
                 requestMethod = "GET"
                 connectTimeout = 10000
                 readTimeout = 10000
-
                 setRequestProperty("User-Agent", "dbook-android-app/1.0.1")
             }
 
@@ -45,24 +46,40 @@ class DictionaryRepository(
 
                     val firstEntry = apiResponses?.firstOrNull()
                     if (firstEntry != null) {
-                        
                         val phoneticText = firstEntry.phonetic 
                             ?: firstEntry.phonetics?.firstOrNull { !it.text.isNullOrBlank() }?.text
 
-                        val firstMeaning = firstEntry.meanings?.firstOrNull()
-                        val firstDef = firstMeaning?.definitions?.firstOrNull()
+                        val rawMeanings = firstEntry.meanings ?: emptyList()
 
-                        val combinedSynonyms = mutableListOf<String>()
-                        firstMeaning?.synonyms?.let { combinedSynonyms.addAll(it) }
-                        firstDef?.synonyms?.let { combinedSynonyms.addAll(it) }
+                        val meaningGroups: List<MeaningGroup> = rawMeanings.map { meaning ->
+                            val defItems: List<DefinitionItem> = meaning.definitions.map { def ->
+                                DefinitionItem(
+                                    definition = def.definition,
+                                    example = def.example
+                                )
+                            }
+
+                            val combinedSynonyms = mutableListOf<String>()
+                            meaning.synonyms?.let { combinedSynonyms.addAll(it) }
+                            meaning.definitions.forEach { def ->
+                                def.synonyms?.let { combinedSynonyms.addAll(it) }
+                            }
+
+                            MeaningGroup(
+                                partOfSpeech = meaning.partOfSpeech,
+                                definitions = defItems,
+                                synonyms = combinedSynonyms.distinct()
+                            )
+                        }
+
+                        if (meaningGroups.isEmpty()) {
+                            return@withContext DictionaryUiState.NotFound
+                        }
 
                         val result = DefinitionResult(
                             word = firstEntry.word,
                             phonetic = phoneticText,
-                            partOfSpeech = firstMeaning?.partOfSpeech,
-                            definition = firstDef?.definition ?: "No definition available",
-                            example = firstDef?.example,
-                            synonyms = combinedSynonyms.distinct()
+                            meanings = meaningGroups
                         )
 
                         cacheMap[cleanWord] = result
@@ -73,13 +90,13 @@ class DictionaryRepository(
                 }
                 404 -> DictionaryUiState.NotFound
                 429 -> DictionaryUiState.TooManyRequests
-                500, 502, 503, 504 -> DictionaryUiState.Error("The server is experiencing issues  (HTTP $responseCode). Please try again.")
+                500, 502, 503, 504 -> DictionaryUiState.Error("The server is experiencing issues (HTTP $responseCode). Please try again.")
                 else -> DictionaryUiState.Error("HTTP Error: $responseCode")
             }
         } catch (e: java.net.UnknownHostException) {
             DictionaryUiState.NoInternet
         } catch (e: Exception) {
-            DictionaryUiState.Error(e.localizedMessage ?: "Gagal mengambil data")
+            DictionaryUiState.Error(e.localizedMessage ?: "Failed to retrieve data")
         }
     }
 }
