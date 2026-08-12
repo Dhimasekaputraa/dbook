@@ -1,5 +1,6 @@
 package com.dhimsea.dbook.ui.library
 
+import android.app.Activity
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
@@ -42,7 +44,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import coil.compose.AsyncImage
 import com.dhimsea.dbook.domain.model.Book
 import kotlinx.coroutines.flow.collectLatest
@@ -137,245 +142,314 @@ fun LibraryScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = if (isSearchActive) 0.dp else 16.dp)
-                ) {
-                    SearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        onSearch = { isSearchActive = false },
-                        active = isSearchActive,
-                        onActiveChange = { isSearchActive = it },
-                        placeholder = { Text("Search Book Title or Author...") },
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
-                                }
-                            }
-                        },
-                        colors = SearchBarDefaults.colors(
-                            containerColor = if (isSearchActive) {
-                                MaterialTheme.colorScheme.surface
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            }
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        when {
-                            searchQuery.isBlank() -> { }
-                            filteredBooksForSearch.isEmpty() -> {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(32.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = "Book not found.",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            else -> {
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(vertical = 8.dp)
-                                ) {
-                                    items(filteredBooksForSearch, key = { it.id }) { book ->
-                                        ListItem(
-                                            headlineContent = {
-                                                Text(
-                                                    text = book.title,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                            },
-                                            supportingContent = {
-                                                Text(
-                                                    text = book.author,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            leadingContent = {
-                                                if (!book.coverPath.isNullOrEmpty()) {
-                                                    AsyncImage(
-                                                        model = book.coverPath,
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier
-                                                            .size(width = 36.dp, height = 48.dp)
-                                                            .clip(MaterialTheme.shapes.extraSmall)
-                                                    )
-                                                } else {
-                                                    Surface(
-                                                        modifier = Modifier.size(width = 36.dp, height = 48.dp),
-                                                        shape = MaterialTheme.shapes.extraSmall,
-                                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                                    ) {
-                                                        Box(contentAlignment = Alignment.Center) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.BookIcon,
-                                                                contentDescription = null,
-                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            },
-                                            colors = ListItemDefaults.colors(
-                                                containerColor = Color.Transparent
-                                            ),
-                                            modifier = Modifier.clickable {
-                                                isSearchActive = false
-                                                onBookClick(book)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+    val isSystemInDark = isSystemInDarkTheme()
+    val view = LocalView.current
 
-                if (!isSearchActive) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box {
-                                TextButton(onClick = { showSortDropdown = true }) {
-                                    Text(
-                                        text = selectedSortOption.displayName,
-                                        style = MaterialTheme.typography.labelLarge
-                                    )
-                                }
-
-                                DropdownMenu(
-                                    expanded = showSortDropdown,
-                                    onDismissRequest = { showSortDropdown = false }
-                                ) {
-                                    SortOption.entries.forEach { option ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    RadioButton(
-                                                        selected = (selectedSortOption == option),
-                                                        onClick = null
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text(option.displayName)
-                                                }
-                                            },
-                                            onClick = {
-                                                viewModel.setSortOption(option)
-                                                showSortDropdown = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            IconButton(
-                                onClick = { viewModel.toggleSortDirection() },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                                    contentDescription = "Sort Direction",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-
-                        IconButton(onClick = { viewModel.toggleGridView() }) {
-                            Icon(
-                                imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
-                                contentDescription = "Toggle Grid/List View"
-                            )
-                        }
-                    }
-                }
+    if (!view.isInEditMode) {
+        DisposableEffect(isSystemInDark) {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                
+                insetsController.show(WindowInsetsCompat.Type.statusBars())
+                insetsController.isAppearanceLightStatusBars = !isSystemInDark
             }
-        },
-        floatingActionButton = {
-            if (!isSearchActive) {
-                FloatingActionButton(
-                    onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Books")
+
+            onDispose {
+                val window = (view.context as? Activity)?.window
+                if (window != null) {
+                    val insetsController = WindowCompat.getInsetsController(window, view)
+                    insetsController.isAppearanceLightStatusBars = !isSystemInDark
                 }
             }
         }
-    ) { paddingValues ->
-        PullToRefreshBox(
-            isRefreshing = isScanning,
-            onRefresh = { viewModel.refreshLibrary() },
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (processedBooks.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                .statusBarsPadding(),
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+            topBar = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
                 ) {
-                    Text(
-                        text = if (searchQuery.isNotEmpty())
-                            "No Books Match \"$searchQuery\""
-                        else
-                            "No books have been added yet.\nPress + to add books.",
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    if (searchQuery.isBlank() && continueReadingBooks.isNotEmpty()) {
-                        item {
-                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                                Text(
-                                    text = "Continue Reading",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = if (isSearchActive) 0.dp else 16.dp)
+                    ) {
+                        SearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onSearch = { isSearchActive = false },
+                            active = isSearchActive,
+                            onActiveChange = { isSearchActive = it },
+                            placeholder = { Text("Search Book Title or Author...") },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Default.Search, contentDescription = "Search")
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear")
+                                    }
+                                }
+                            },
+                            colors = SearchBarDefaults.colors(
+                                containerColor = if (isSearchActive) {
+                                    MaterialTheme.colorScheme.surface
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                }
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            when {
+                                searchQuery.isBlank() -> { }
+                                filteredBooksForSearch.isEmpty() -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "Book not found.",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                else -> {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(vertical = 8.dp)
+                                    ) {
+                                        items(filteredBooksForSearch, key = { it.id }) { book ->
+                                            ListItem(
+                                                headlineContent = {
+                                                    Text(
+                                                        text = book.title,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                },
+                                                supportingContent = {
+                                                    Text(
+                                                        text = book.author,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                },
+                                                leadingContent = {
+                                                    if (!book.coverPath.isNullOrEmpty()) {
+                                                        AsyncImage(
+                                                            model = book.coverPath,
+                                                            contentDescription = null,
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier
+                                                                .size(width = 36.dp, height = 48.dp)
+                                                                .clip(MaterialTheme.shapes.extraSmall)
+                                                        )
+                                                    } else {
+                                                        Surface(
+                                                            modifier = Modifier.size(width = 36.dp, height = 48.dp),
+                                                            shape = MaterialTheme.shapes.extraSmall,
+                                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.BookIcon,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                colors = ListItemDefaults.colors(
+                                                    containerColor = Color.Transparent
+                                                ),
+                                                modifier = Modifier.clickable {
+                                                    isSearchActive = false
+                                                    onBookClick(book)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 16.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    if (!isSearchActive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box {
+                                    TextButton(onClick = { showSortDropdown = true }) {
+                                        Text(
+                                            text = selectedSortOption.displayName,
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showSortDropdown,
+                                        onDismissRequest = { showSortDropdown = false }
+                                    ) {
+                                        SortOption.entries.forEach { option ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        RadioButton(
+                                                            selected = (selectedSortOption == option),
+                                                            onClick = null
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(option.displayName)
+                                                    }
+                                                },
+                                                onClick = {
+                                                    viewModel.setSortOption(option)
+                                                    showSortDropdown = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.toggleSortDirection() },
+                                    modifier = Modifier.size(32.dp)
                                 ) {
-                                    items(continueReadingBooks, key = { "continue_${it.id}" }) { book ->
-                                        LargeContinueReadingCard(
+                                    Icon(
+                                        imageVector = if (isAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                        contentDescription = "Sort Direction",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            IconButton(onClick = { viewModel.toggleGridView() }) {
+                                Icon(
+                                    imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
+                                    contentDescription = "Toggle Grid/List View"
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            floatingActionButton = {
+                if (!isSearchActive) {
+                    FloatingActionButton(
+                        onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Books")
+                    }
+                }
+            }
+        ) { paddingValues ->
+            PullToRefreshBox(
+                isRefreshing = isScanning,
+                onRefresh = { viewModel.refreshLibrary() },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                if (processedBooks.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (searchQuery.isNotEmpty())
+                                "No Books Match \"$searchQuery\""
+                            else
+                                "No books have been added yet.\nPress + to add books.",
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
+                        if (searchQuery.isBlank() && continueReadingBooks.isNotEmpty()) {
+                            item {
+                                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                    Text(
+                                        text = "Continue Reading",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        items(continueReadingBooks, key = { "continue_${it.id}" }) { book ->
+                                            LargeContinueReadingCard(
+                                                book = book,
+                                                onClick = { onBookClick(book) },
+                                                onDelete = { bookToDelete = book },
+                                                onAnnotations = { onAnnotationClick(book) },
+                                                onToggleFinish = { bookToFinish = book }
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                }
+                            }
+                        }
+
+                        item {
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "Search Results" else "All Books",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+
+                        if (isGridView) {
+                            item {
+                                val gridHeight = calculateGridHeight(processedBooks.size)
+                                LazyVerticalGrid(
+                                    columns = GridCells.Adaptive(minSize = 120.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(gridHeight),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                    userScrollEnabled = false
+                                ) {
+                                    items(processedBooks, key = { it.id }) { book ->
+                                        BookItemCard(
                                             book = book,
                                             onClick = { onBookClick(book) },
                                             onDelete = { bookToDelete = book },
@@ -384,55 +458,17 @@ fun LibraryScreen(
                                         )
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             }
-                        }
-                    }
-
-                    item {
-                        Text(
-                            text = if (searchQuery.isNotBlank()) "Search Results" else "All Books",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-
-                    if (isGridView) {
-                        item {
-                            val gridHeight = calculateGridHeight(processedBooks.size)
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 120.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(gridHeight),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                userScrollEnabled = false
-                            ) {
-                                items(processedBooks, key = { it.id }) { book ->
-                                    BookItemCard(
-                                        book = book,
-                                        onClick = { onBookClick(book) },
-                                        onDelete = { bookToDelete = book },
-                                        onAnnotations = { onAnnotationClick(book) },
-                                        onToggleFinish = { bookToFinish = book }
-                                    )
-                                }
+                        } else {
+                            items(processedBooks, key = { it.id }) { book ->
+                                BookItemListRow(
+                                    book = book,
+                                    onClick = { onBookClick(book) },
+                                    onDelete = { bookToDelete = book },
+                                    onAnnotations = { onAnnotationClick(book) },
+                                    onToggleFinish = { bookToFinish = book }
+                                )
                             }
-                        }
-                    } else {
-                        items(processedBooks, key = { it.id }) { book ->
-                            BookItemListRow(
-                                book = book,
-                                onClick = { onBookClick(book) },
-                                onDelete = { bookToDelete = book },
-                                onAnnotations = { onAnnotationClick(book) },
-                                onToggleFinish = { bookToFinish = book }
-                            )
                         }
                     }
                 }

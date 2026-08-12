@@ -213,6 +213,7 @@ class LibraryViewModel(
                 lastReadCfi = null
             )
             bookRepository.updateBook(resetBook)
+            _uiMessage.emit("\"${book.title}\" marked as finished.")
         }
     }
 
@@ -223,6 +224,7 @@ class LibraryViewModel(
                 File(book.coverPath).delete()
             }
             File(book.filePath).delete()
+            _uiMessage.emit("\"${book.title}\" deleted from library.")
         }
     }
 
