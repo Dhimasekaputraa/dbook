@@ -2,6 +2,9 @@ package com.dhimsea.dbook.ui.reader
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
+import android.provider.Settings
+import android.view.WindowManager
 import android.graphics.Color as AndroidColor
 import android.os.Handler
 import android.os.Looper
@@ -201,6 +204,7 @@ fun ReaderScreen(
     onOpenTocScreen: (Long, List<ChapterMarker>, String, Int) -> Unit,
     onNavigateToSearch: (Long, String, String) -> Unit,
     onBack: () -> Unit,
+    keepScreenOn: Boolean = false,
     onHrefJumpHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -508,6 +512,18 @@ fun ReaderScreen(
         }
     }
 
+    DisposableEffect(readerSettings.keepScreenOn) {
+        val window = (context as? Activity)?.window
+        if (readerSettings.keepScreenOn) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
@@ -572,8 +588,6 @@ fun ReaderScreen(
             dictionaryUiState = dictionaryRepository.getDefinition(word)
         }
     }
-
-
 
     Box(
         modifier = Modifier
@@ -692,6 +706,25 @@ fun ReaderScreen(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { webView }
+                )
+            }
+
+            if (readerSettings.isCustomNightLightEnabled) {
+                val overlayColor = if (readerSettings.isDarkMode) {
+                    Color(0xFF1F1A17) 
+                } else {
+                    Color(0xFFFFB74D)
+                }
+                val adjustedAlpha = if (readerSettings.isDarkMode) {
+                    (readerSettings.nightLightIntensity * 0.45f).coerceIn(0.05f, 0.45f)
+                } else {
+                    (readerSettings.nightLightIntensity * 0.35f).coerceIn(0.05f, 0.35f)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(overlayColor.copy(alpha = adjustedAlpha))
                 )
             }
 
@@ -832,7 +865,6 @@ fun ReaderScreen(
                                     webViewRef?.evaluateJavascript("window.getSelection().removeAllRanges();", null)
 
                                     if (selectedText.isNotEmpty()) {
-                         
                                         onTriggerDefine(selectedText)
                                     }
                                 }
@@ -1046,6 +1078,7 @@ fun ReaderScreen(
             onDismiss = { showQuoteShareDialog = false }
         )
     }
+
     if (showAppearanceBottomSheet) {
         ReaderAppearanceBottomSheet(
             settings = readerSettings,

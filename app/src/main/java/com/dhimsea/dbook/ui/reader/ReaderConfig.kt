@@ -19,7 +19,10 @@ data class ReaderSettings(
     val fontSize: Int = 18,
     val lineHeight: Float = 1.7f,
     val textAlign: String = "justify",
-    val isDarkMode: Boolean = false
+    val isDarkMode: Boolean = false,
+    val keepScreenOn: Boolean = false,
+    val isCustomNightLightEnabled: Boolean = false,
+    val nightLightIntensity: Float = 0.15f
 ) {
     companion object {
         private const val PREF_NAME = "reader_preferences"
@@ -31,7 +34,10 @@ data class ReaderSettings(
                 fontSize = prefs.getInt("fontSize", 18),
                 lineHeight = prefs.getFloat("lineHeight", 1.7f),
                 textAlign = prefs.getString("textAlign", "justify") ?: "justify",
-                isDarkMode = prefs.getBoolean("isDarkMode", isSystemDark)
+                isDarkMode = prefs.getBoolean("isDarkMode", isSystemDark),
+                keepScreenOn = prefs.getBoolean("keepScreenOn", false),
+                isCustomNightLightEnabled = prefs.getBoolean("isCustomNightLightEnabled", false),
+                nightLightIntensity = prefs.getFloat("nightLightIntensity", 0.3f)
             )
         }
 
@@ -43,6 +49,9 @@ data class ReaderSettings(
                 putFloat("lineHeight", settings.lineHeight)
                 putString("textAlign", settings.textAlign)
                 putBoolean("isDarkMode", settings.isDarkMode)
+                putBoolean("keepScreenOn", settings.keepScreenOn)
+                putBoolean("isCustomNightLightEnabled", settings.isCustomNightLightEnabled)
+                putFloat("nightLightIntensity", settings.nightLightIntensity)
                 apply()
             }
         }
@@ -219,6 +228,88 @@ fun ReaderAppearanceBottomSheet(
                         Text("Dark")
                     }
                 }
+            }
+
+            HorizontalDivider()
+
+            ReaderAppearanceSettingsContent(
+                settings = settings,
+                onSettingsChanged = onSettingsChanged
+            )
+        }
+    }
+}
+
+@Composable
+fun ReaderAppearanceSettingsContent(
+    settings: ReaderSettings,
+    onSettingsChanged: (ReaderSettings) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Keep Screen On",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Switch(
+                checked = settings.keepScreenOn,
+                onCheckedChange = { isChecked ->
+                    onSettingsChanged(settings.copy(keepScreenOn = isChecked))
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Night Light Filter",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Switch(
+                checked = settings.isCustomNightLightEnabled,
+                onCheckedChange = { isChecked ->
+                    onSettingsChanged(settings.copy(isCustomNightLightEnabled = isChecked))
+                }
+            )
+        }
+
+        if (settings.isCustomNightLightEnabled) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Warmth Intensity",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${(settings.nightLightIntensity * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Slider(
+                    value = settings.nightLightIntensity,
+                    onValueChange = { newIntensity ->
+                        onSettingsChanged(settings.copy(nightLightIntensity = newIntensity))
+                    },
+                    valueRange = 0.00f..1.00f
+                )
             }
         }
     }
