@@ -14,6 +14,7 @@ import com.dhimsea.dbook.core.utils.EpubUtils
 import com.dhimsea.dbook.core.utils.FileUtil
 import com.dhimsea.dbook.domain.model.Book
 import com.dhimsea.dbook.domain.model.BookFormat
+import com.dhimsea.dbook.domain.model.ShelfWithBooks
 import com.dhimsea.dbook.domain.repository.BookRepository
 import java.io.File
 import java.util.UUID
@@ -52,6 +53,13 @@ class LibraryViewModel(
     private val NOTIF_ID = 1001
 
     val books: StateFlow<List<Book>> = bookRepository.getAllBooks()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val shelvesWithBooks: StateFlow<List<ShelfWithBooks>> = bookRepository.getAllShelvesWithBooks()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -202,6 +210,83 @@ class LibraryViewModel(
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    fun createShelf(name: String, selectedBookIds: List<Long>, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val trimmedName = name.trim()
+            if (trimmedName.isEmpty()) {
+                onResult(false, "Shelf name cannot be empty.")
+                return@launch
+            }
+            if (selectedBookIds.isEmpty()) {
+                onResult(false, "Please select at least one book.")
+                return@launch
+            }
+
+            val success = bookRepository.createShelfWithBooks(trimmedName, selectedBookIds)
+            if (success) {
+                _uiMessage.emit("Shelf \"$trimmedName\" created.")
+                onResult(true, null)
+            } else {
+                onResult(false, "A shelf with this name already exists.")
+            }
+        }
+    }
+
+    fun addBookToShelves(bookId: Long, shelfIds: List<Long>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.addBookToShelves(bookId, shelfIds)
+            _uiMessage.emit("Book added to shelf.")
+        }
+    }
+
+    fun removeBookFromShelf(shelfId: Long, bookId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.removeBookFromShelf(shelfId, bookId)
+            _uiMessage.emit("Book removed from shelf.")
+        }
+    }
+
+    fun deleteShelf(shelfId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            bookRepository.deleteShelf(shelfId)
+            _uiMessage.emit("Shelf deleted.")
+        }
+    }
+
+    fun updateShelf(shelfId: Long, newName: String, orderedBookIds: List<Long>, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val trimmedName = newName.trim()
+            if (trimmedName.isEmpty()) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onResult(false, "Shelf name cannot be empty.")
+                }
+                return@launch
+            }
+            if (orderedBookIds.isEmpty()) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onResult(false, "Shelf must contain at least one book.")
+                }
+                return@launch
+            }
+
+            val success = bookRepository.updateShelfWithBooks(shelfId, trimmedName, orderedBookIds)
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (success) {
+                    _uiMessage.emit("Shelf updated.")
+                    onResult(true, null)
+                } else {
+                    onResult(false, "A shelf with this name already exists.")
+                }
+            }
+        }
+    }
+
+    fun showSnackbar(message: String) {
+        viewModelScope.launch {
+            _uiMessage.emit(message)
         }
     }
 

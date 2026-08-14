@@ -6,9 +6,14 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,10 +22,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Book as BookIcon
@@ -28,8 +33,12 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.IndeterminateCheckBox
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -37,19 +46,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import coil.compose.AsyncImage
 import com.dhimsea.dbook.domain.model.Book
+import com.dhimsea.dbook.domain.model.ShelfWithBooks
 import kotlinx.coroutines.flow.collectLatest
 
 enum class SortOption(val displayName: String) {
@@ -63,10 +74,12 @@ enum class SortOption(val displayName: String) {
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     onBookClick: (Book) -> Unit,
-    onAnnotationClick: (Book) -> Unit
+    onAnnotationClick: (Book) -> Unit,
+    onNavigateToEditShelf: (Long) -> Unit
 ) {
     val context = LocalContext.current
     val books by viewModel.books.collectAsState()
+    val shelvesWithBooks by viewModel.shelvesWithBooks.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -80,6 +93,13 @@ fun LibraryScreen(
 
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var bookToFinish by remember { mutableStateOf<Book?>(null) }
+    var bookToAddToShelf by remember { mutableStateOf<Book?>(null) }
+
+    var isFabExpanded by remember { mutableStateOf(false) }
+    var showCreateShelfDialog by remember { mutableStateOf(false) }
+    
+    var shelfToDelete by remember { mutableStateOf<ShelfWithBooks?>(null) }
+    var bookToRemoveFromShelf by remember { mutableStateOf<Pair<ShelfWithBooks, Book>?>(null) }
 
     val continueReadingBooks = remember(books) {
         books.filter { book -> book.progressPercentage > 0f }
@@ -358,13 +378,22 @@ fun LibraryScreen(
             },
             floatingActionButton = {
                 if (!isSearchActive) {
-                    FloatingActionButton(
-                        onClick = { multiFilePickerLauncher.launch(arrayOf("application/epub+zip")) },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Books")
-                    }
+                    LibraryFabMenu(
+                        isExpanded = isFabExpanded,
+                        onToggleFab = { isFabExpanded = !isFabExpanded },
+                        onAddBook = {
+                            isFabExpanded = false
+                            multiFilePickerLauncher.launch(arrayOf("application/epub+zip"))
+                        },
+                        onCreateShelf = {
+                            isFabExpanded = false
+                            if (books.isEmpty()) {
+                                viewModel.showSnackbar("You need at least one book in library to create a shelf.")
+                            } else {
+                                showCreateShelfDialog = true
+                            }
+                        }
+                    )
                 }
             }
         ) { paddingValues ->
@@ -402,7 +431,7 @@ fun LibraryScreen(
                                         text = "Continue Reading",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                                     )
 
                                     LazyRow(
@@ -413,6 +442,44 @@ fun LibraryScreen(
                                             LargeContinueReadingCard(
                                                 book = book,
                                                 onClick = { onBookClick(book) },
+                                                onAddToShelf = { bookToAddToShelf = book },
+                                                onDelete = { bookToDelete = book },
+                                                onAnnotations = { onAnnotationClick(book) },
+                                                onToggleFinish = { bookToFinish = book }
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                }
+                            }
+                        }
+
+                        if (searchQuery.isBlank() && shelvesWithBooks.isNotEmpty()) {
+                            items(shelvesWithBooks, key = { "shelf_${it.shelf.id}" }) { shelfWithBooks ->
+                                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                
+                                    ShelfHeader(
+                                        shelfName = shelfWithBooks.shelf.name,
+                                        onEditShelfClick = { 
+                                            onNavigateToEditShelf(shelfWithBooks.shelf.id)
+                                        },
+                                        onDeleteShelfClick = { shelfToDelete = shelfWithBooks }
+                                    )
+
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        items(shelfWithBooks.books, key = { "shelf_${shelfWithBooks.shelf.id}_${it.id}" }) { book ->
+                                            ShelfBookCard(
+                                                book = book,
+                                                onClick = { onBookClick(book) },
+                                                onRemoveFromShelf = {
+                                                    bookToRemoveFromShelf = Pair(shelfWithBooks, book)
+                                                },
+                                                onAddToShelf = { bookToAddToShelf = book },
                                                 onDelete = { bookToDelete = book },
                                                 onAnnotations = { onAnnotationClick(book) },
                                                 onToggleFinish = { bookToFinish = book }
@@ -452,6 +519,7 @@ fun LibraryScreen(
                                         BookItemCard(
                                             book = book,
                                             onClick = { onBookClick(book) },
+                                            onAddToShelf = { bookToAddToShelf = book },
                                             onDelete = { bookToDelete = book },
                                             onAnnotations = { onAnnotationClick(book) },
                                             onToggleFinish = { bookToFinish = book }
@@ -464,6 +532,7 @@ fun LibraryScreen(
                                 BookItemListRow(
                                     book = book,
                                     onClick = { onBookClick(book) },
+                                    onAddToShelf = { bookToAddToShelf = book },
                                     onDelete = { bookToDelete = book },
                                     onAnnotations = { onAnnotationClick(book) },
                                     onToggleFinish = { bookToFinish = book }
@@ -474,6 +543,65 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+
+    if (showCreateShelfDialog) {
+        CreateShelfDialog(
+            allBooks = books,
+            onDismiss = { showCreateShelfDialog = false },
+            onCreateShelf = { name, bookIds, onResult ->
+                viewModel.createShelf(name, bookIds) { success, errorMsg ->
+                    onResult(success, errorMsg)
+                }
+            }
+        )
+    }
+
+    bookToAddToShelf?.let { book ->
+        AddToShelfDialog(
+            book = book,
+            shelves = shelvesWithBooks,
+            onDismiss = { bookToAddToShelf = null },
+            onConfirm = { selectedShelfIds ->
+                viewModel.addBookToShelves(book.id, selectedShelfIds)
+                bookToAddToShelf = null
+            }
+        )
+    }
+
+    bookToRemoveFromShelf?.let { (shelfWithBooks, book) ->
+        val isLastBook = shelfWithBooks.books.size <= 1
+        AlertDialog(
+            onDismissRequest = { bookToRemoveFromShelf = null },
+            title = { Text("Remove from Shelf?") },
+            text = {
+                Text(
+                    if (isLastBook) {
+                        "\"${book.title}\" is the last book in \"${shelfWithBooks.shelf.name}\". Removing it will also delete this shelf. Continue?"
+                    } else {
+                        "Remove \"${book.title}\" from \"${shelfWithBooks.shelf.name}\"?"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.removeBookFromShelf(shelfWithBooks.shelf.id, book.id)
+                        bookToRemoveFromShelf = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToRemoveFromShelf = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     bookToFinish?.let { book ->
@@ -528,12 +656,424 @@ fun LibraryScreen(
             }
         )
     }
+
+    shelfToDelete?.let { shelfWithBooks ->
+        AlertDialog(
+            onDismissRequest = { shelfToDelete = null },
+            title = { Text("Delete Shelf?") },
+            text = {
+                Text("Are you sure you want to delete \"${shelfWithBooks.shelf.name}\"? The books inside will remain in your library.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteShelf(shelfWithBooks.shelf.id)
+                        shelfToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { shelfToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun CreateShelfDialog(
+    allBooks: List<Book>,
+    onDismiss: () -> Unit,
+    onCreateShelf: (name: String, bookIds: List<Long>, onResult: (Boolean, String?) -> Unit) -> Unit
+) {
+    var shelfName by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    val selectedBookIds = remember { mutableStateListOf<Long>() }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val filteredBooks = remember(searchQuery, allBooks) {
+        if (searchQuery.isBlank()) allBooks
+        else allBooks.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.author.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create New Shelf") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = shelfName,
+                    onValueChange = {
+                        shelfName = it
+                        errorMessage = null
+                    },
+                    label = { Text("Shelf Name") },
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    supportingText = {
+                        if (errorMessage != null) {
+                            Text(
+                                text = errorMessage ?: "",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search books...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "Select Books (${selectedBookIds.size} selected):",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredBooks, key = { it.id }) { book ->
+                        val isSelected = selectedBookIds.contains(book.id)
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = book.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = book.author,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            leadingContent = {
+                                if (!book.coverPath.isNullOrEmpty()) {
+                                    AsyncImage(
+                                        model = book.coverPath,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(width = 32.dp, height = 44.dp)
+                                            .clip(MaterialTheme.shapes.extraSmall)
+                                    )
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.size(width = 32.dp, height = 44.dp),
+                                        shape = MaterialTheme.shapes.extraSmall,
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.BookIcon,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            trailingContent = {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { checked ->
+                                        if (checked) selectedBookIds.add(book.id)
+                                        else selectedBookIds.remove(book.id)
+                                    }
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (isSelected) selectedBookIds.remove(book.id)
+                                    else selectedBookIds.add(book.id)
+                                }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (shelfName.trim().isEmpty()) {
+                        errorMessage = "Shelf name cannot be empty."
+                        return@TextButton
+                    }
+                    if (selectedBookIds.isEmpty()) {
+                        errorMessage = "Select at least one book."
+                        return@TextButton
+                    }
+                    onCreateShelf(shelfName, selectedBookIds.toList()) { success, errorMsg ->
+                        if (success) {
+                            onDismiss()
+                        } else {
+                            errorMessage = errorMsg 
+                        }
+                    }
+                }
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun AddToShelfDialog(
+    book: Book,
+    shelves: List<ShelfWithBooks>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<Long>) -> Unit
+) {
+    val selectedShelfIds = remember { mutableStateListOf<Long>() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add \"${book.title}\" to Shelf") },
+        text = {
+            if (shelves.isEmpty()) {
+                Text("No shelves available. Please create a shelf first.")
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(shelves, key = { it.shelf.id }) { shelfWithBooks ->
+                        val isAlreadyInShelf = shelfWithBooks.books.any { it.id == book.id }
+                        val isSelected = selectedShelfIds.contains(shelfWithBooks.shelf.id) || isAlreadyInShelf
+
+                        ListItem(
+                            headlineContent = { Text(shelfWithBooks.shelf.name) },
+                            trailingContent = {
+                                Checkbox(
+                                    checked = isSelected,
+                                    enabled = !isAlreadyInShelf,
+                                    onCheckedChange = { checked ->
+                                        if (checked) selectedShelfIds.add(shelfWithBooks.shelf.id)
+                                        else selectedShelfIds.remove(shelfWithBooks.shelf.id)
+                                    }
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isAlreadyInShelf) {
+                                    if (isSelected) selectedShelfIds.remove(shelfWithBooks.shelf.id)
+                                    else selectedShelfIds.add(shelfWithBooks.shelf.id)
+                                }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(selectedShelfIds.toList()) },
+                enabled = selectedShelfIds.isNotEmpty()
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ShelfBookCard(
+    book: Book,
+    onClick: () -> Unit,
+    onRemoveFromShelf: () -> Unit,
+    onAddToShelf: () -> Unit,
+    onDelete: () -> Unit,
+    onAnnotations: () -> Unit,
+    onToggleFinish: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box {
+        Card(
+            modifier = Modifier
+                .width(120.dp)
+                .aspectRatio(0.7f)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                ),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            if (!book.coverPath.isNullOrEmpty()) {
+                AsyncImage(
+                    model = book.coverPath,
+                    contentDescription = "cover ${book.title}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BookIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = book.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = book.author,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Open") },
+                onClick = {
+                    showMenu = false
+                    onClick()
+                },
+                leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Add to Shelf") },
+                onClick = {
+                    showMenu = false
+                    onAddToShelf()
+                },
+                leadingIcon = { Icon(Icons.Default.AddBox, contentDescription = null) }
+            )
+
+            DropdownMenuItem(
+                text = { Text("Remove from Shelf") },
+                onClick = {
+                    showMenu = false
+                    onRemoveFromShelf()
+                },
+                leadingIcon = { Icon(Icons.Default.IndeterminateCheckBox, contentDescription = null) }
+            )
+
+            if (book.progressPercentage > 0f || book.lastReadPage > 0) {
+                DropdownMenuItem(
+                    text = { Text("Mark as Finished") },
+                    onClick = {
+                        showMenu = false
+                        onToggleFinish()
+                    },
+                    leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null) }
+                )
+            }
+
+            DropdownMenuItem(
+                text = { Text("My Annotations") },
+                onClick = {
+                    showMenu = false
+                    onAnnotations()
+                },
+                leadingIcon = { Icon(Icons.Default.Bookmark, contentDescription = null) }
+            )
+
+            HorizontalDivider()
+
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    showMenu = false
+                    onDelete()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            )
+        }
+    }
 }
 
 @Composable
 fun LargeContinueReadingCard(
     book: Book,
     onClick: () -> Unit,
+    onAddToShelf: () -> Unit,
     onDelete: () -> Unit,
     onAnnotations: () -> Unit,
     onToggleFinish: () -> Unit
@@ -617,6 +1157,7 @@ fun LargeContinueReadingCard(
                     showMenu = showMenu,
                     onDismiss = { showMenu = false },
                     onClick = onClick,
+                    onAddToShelf = onAddToShelf,
                     onAnnotations = onAnnotations,
                     onDelete = onDelete,
                     onToggleFinish = onToggleFinish,
@@ -632,6 +1173,7 @@ fun LargeContinueReadingCard(
 fun BookItemCard(
     book: Book,
     onClick: () -> Unit,
+    onAddToShelf: () -> Unit,
     onDelete: () -> Unit,
     onAnnotations: () -> Unit,
     onToggleFinish: () -> Unit
@@ -704,6 +1246,7 @@ fun BookItemCard(
             showMenu = showMenu,
             onDismiss = { showMenu = false },
             onClick = onClick,
+            onAddToShelf = onAddToShelf,
             onAnnotations = onAnnotations,
             onDelete = onDelete,
             onToggleFinish = onToggleFinish,
@@ -717,6 +1260,7 @@ fun BookItemCard(
 fun BookItemListRow(
     book: Book,
     onClick: () -> Unit,
+    onAddToShelf: () -> Unit,
     onDelete: () -> Unit,
     onAnnotations: () -> Unit,
     onToggleFinish: () -> Unit
@@ -781,6 +1325,7 @@ fun BookItemListRow(
             showMenu = showMenu,
             onDismiss = { showMenu = false },
             onClick = onClick,
+            onAddToShelf = onAddToShelf,
             onAnnotations = onAnnotations,
             onDelete = onDelete,
             onToggleFinish = onToggleFinish,
@@ -794,6 +1339,7 @@ fun BookDropdownMenu(
     showMenu: Boolean,
     onDismiss: () -> Unit,
     onClick: () -> Unit,
+    onAddToShelf: () -> Unit,
     onAnnotations: () -> Unit,
     onDelete: () -> Unit,
     onToggleFinish: () -> Unit,
@@ -810,6 +1356,15 @@ fun BookDropdownMenu(
                 onClick()
             },
             leadingIcon = { Icon(Icons.Default.BookIcon, contentDescription = null) }
+        )
+
+        DropdownMenuItem(
+            text = { Text("Add to Shelf") },
+            onClick = {
+                onDismiss()
+                onAddToShelf()
+            },
+            leadingIcon = { Icon(Icons.Default.LibraryAdd, contentDescription = null) }
         )
 
         if (showMarkAsFinished) {
@@ -848,6 +1403,140 @@ fun BookDropdownMenu(
                 )
             }
         )
+    }
+}
+
+@Composable
+fun ShelfHeader(
+    shelfName: String,
+    onEditShelfClick: () -> Unit,
+    onDeleteShelfClick: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = shelfName,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Box {
+            IconButton(onClick = { expanded = true }) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Shelf options"
+                )
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Edit Shelf") },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        onEditShelfClick()
+                    }
+                )
+
+                DropdownMenuItem(
+                    text = { Text("Delete Shelf") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onDeleteShelfClick()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LibraryFabMenu(
+    isExpanded: Boolean,
+    onToggleFab: () -> Unit,
+    onAddBook: () -> Unit,
+    onCreateShelf: () -> Unit
+) {
+    val rotationAngle by animateFloatAsState(targetValue = if (isExpanded) 45f else 0f, label = "fabRotation")
+
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SmallFloatingActionButton(
+                    onClick = onCreateShelf,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = null)
+                        Text("Create Shelf", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+
+                SmallFloatingActionButton(
+                    onClick = onAddBook,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.height(44.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Add Book", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = onToggleFab,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.height(60.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Menu",
+                modifier = Modifier
+                    .size(28.dp)
+                    .rotate(rotationAngle)
+            )
+        }
     }
 }
 
