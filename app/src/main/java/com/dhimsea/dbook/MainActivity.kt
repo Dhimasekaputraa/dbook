@@ -30,6 +30,7 @@ import com.dhimsea.dbook.ui.reader.ChapterMarker
 import com.dhimsea.dbook.ui.reader.ReaderScreen
 import com.dhimsea.dbook.ui.search.SearchResultsScreen
 import com.dhimsea.dbook.ui.search.SearchViewModel
+import com.dhimsea.dbook.ui.library.EditShelfScreen
 import com.dhimsea.dbook.ui.toc.TocScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -71,6 +72,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onAnnotationClick = { book ->
                                 navController.navigate("annotation/${book.id}")
+                            },
+                            onNavigateToEditShelf = { shelfId ->
+                                navController.navigate("edit_shelf/$shelfId")
                             }
                         )
                     }
@@ -265,6 +269,26 @@ class MainActivity : ComponentActivity() {
                                 navController.popBackStack()
                             }
                         )
+                    }
+
+                    composable("edit_shelf/{shelfId}") { backStackEntry ->
+                        val shelfId = backStackEntry.arguments?.getString("shelfId")?.toLongOrNull() ?: return@composable
+                        
+                        val shelvesWithBooks by libraryViewModel.shelvesWithBooks.collectAsState()
+                        val allBooks by libraryViewModel.books.collectAsState()
+
+                        val targetShelf = shelvesWithBooks.find { it.shelf.id == shelfId }
+
+                        targetShelf?.let { shelfWithBooks ->
+                            EditShelfScreen(
+                                shelfWithBooks = shelfWithBooks,
+                                allBooks = allBooks,
+                                onBackClick = { navController.popBackStack() },
+                                onSaveShelf = { id, name, bookIds, onResult ->
+                                    libraryViewModel.updateShelf(id, name, bookIds, onResult)
+                                }
+                            )
+                        }
                     }
                 }
             }
