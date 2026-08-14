@@ -6,21 +6,27 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.dhimsea.dbook.data.local.dao.BookDao
 import com.dhimsea.dbook.data.local.dao.AnnotationDao
+import com.dhimsea.dbook.data.local.dao.ShelfDao
 import com.dhimsea.dbook.data.local.entity.BookEntity
 import com.dhimsea.dbook.data.local.entity.AnnotationEntity
+import com.dhimsea.dbook.data.local.entity.ShelfEntity
+import com.dhimsea.dbook.data.local.entity.ShelfBookCrossRef
 
 @Database(
     entities = [
         BookEntity::class, 
-        AnnotationEntity::class
+        AnnotationEntity::class,
+        ShelfEntity::class,
+        ShelfBookCrossRef::class
     ],
-    version = 5,                   
+    version = 7,                   
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     
     abstract fun bookDao(): BookDao
     abstract fun annotationDao(): AnnotationDao
+    abstract fun shelfDao(): ShelfDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -63,6 +69,50 @@ abstract class AppDatabase : RoomDatabase() {
                         `colorHex` TEXT NOT NULL DEFAULT '#FFEB3B',
                         `createdAt` INTEGER NOT NULL
                     )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shelves` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shelf_book_cross_ref` (
+                        `shelfId` INTEGER NOT NULL,
+                        `bookId` INTEGER NOT NULL,
+                        PRIMARY KEY(`shelfId`, `bookId`),
+                        FOREIGN KEY(`shelfId`) REFERENCES `shelves`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS `index_shelf_book_cross_ref_bookId` 
+                    ON `shelf_book_cross_ref` (`bookId`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS `index_shelf_book_cross_ref_bookId` 
+                    ON `shelf_book_cross_ref` (`bookId`)
                     """.trimIndent()
                 )
             }
