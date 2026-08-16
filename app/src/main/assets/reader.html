@@ -151,10 +151,35 @@
                     }
                 }
 
+                var isValidCfi = initialCfi && 
+                                initialCfi !== "null" && 
+                                initialCfi !== "undefined" && 
+                                initialCfi !== "" && 
+                                initialCfi !== "null%20";
+
+                if (isValidCfi) {
+                    if (window.Android && window.Android.onIndexingProgress) {
+                        try { window.Android.onIndexingProgress(100); } catch(e) {}
+                    }
+                    resolve();
+
+                    setTimeout(function() {
+                        if (book && book.locations) {
+                            book.locations.generate(1600).then(function() {
+                                try {
+                                    var generated = book.locations.save();
+                                    localStorage.setItem(cacheKey, generated);
+                                } catch(e) {}
+                            }).catch(function(err) {});
+                        }
+                    }, 1000);
+                    return;
+                }
+
                 var totalSpineItems = (book.spine && book.spine.spineItems) ? book.spine.spineItems.length : 1;
                 var processedItems = 0;
 
-                var originalProcess = book.locations.process ? book.locations.process.bind(book.locations) : null;
+                var originalProcess = (book.locations && book.locations.process) ? book.locations.process.bind(book.locations) : null;
                 if (originalProcess) {
                     book.locations.process = function(section) {
                         return originalProcess(section).then(function(result) {
@@ -179,7 +204,7 @@
 
                     try {
                         var generated = book.locations.save();
-                        localStorage.setItem(cacheKey, generated);
+                       // Menambahkan kolom position tanpa merusak data shelf yang sudah ada        localStorage.setItem(cacheKey, generated);
                     } catch (e) {
                         console.log("Failed to save locations to cache:", e);
                     }

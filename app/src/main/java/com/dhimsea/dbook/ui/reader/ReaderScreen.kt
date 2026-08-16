@@ -83,6 +83,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import org.json.JSONArray
 import java.net.URLEncoder
@@ -185,7 +186,7 @@ class ReaderBridge(
 
     @JavascriptInterface
     fun openQuoteShareDialog(quoteText: String, title: String, author: String) {
-        CoroutineScope(Dispatchers.Main).launch {
+        mainHandler.post {
             onOpenQuoteShare(quoteText, title, author)
         }
     }
@@ -262,6 +263,29 @@ fun ReaderScreen(
         "#E91E63" to Color(0xFFE91E63)
     )
 
+    val server = remember { LocalBookServer(context, 8080) }
+
+    LaunchedEffect(filePath) {
+        withContext(Dispatchers.IO) {
+            currentBook = bookRepository.getBookByFilePath(filePath)
+            var attempts = 0
+            while (attempts < 5 && !isServerReady) {
+                try {
+                    server.serveBook(filePath)
+                    if (!server.isAlive) {
+                        server.start()
+                    }
+                    delay(200)
+                    isServerReady = true
+                } catch (e: Exception) {
+                    attempts++
+                    Log.e("ReaderScreen", "Server start attempt $attempts failed: ${e.message}")
+                    delay(300)
+                }
+            }
+        }
+    }
+
     val webView = remember(context) {
         object : WebView(context) {
             private val emptyActionModeCallback = object : ActionMode.Callback {
@@ -295,6 +319,7 @@ fun ReaderScreen(
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                databaseEnabled = true
                 allowFileAccess = true
                 allowContentAccess = true
                 @Suppress("DEPRECATION")
@@ -302,7 +327,7 @@ fun ReaderScreen(
                 @Suppress("DEPRECATION")
                 allowUniversalAccessFromFileURLs = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                cacheMode = WebSettings.LOAD_NO_CACHE
+                cacheMode = WebSettings.LOAD_DEFAULT
             }
 
             addJavascriptInterface(ReaderBridge(
@@ -312,8 +337,6 @@ fun ReaderScreen(
                     currentPercent = percent
                     currentChapter = chapter
                     latestCfi = cfi
-
-                    Log.d("DBOOK_DEBUG", "UPDATE PROGRESS -> Page: $page | CFI Baru: $cfi")
 
                     currentBook?.let { book ->
                         scope.launch(Dispatchers.IO) {
@@ -361,7 +384,7 @@ fun ReaderScreen(
                     if (url.startsWith("http://") || url.startsWith("https://")) {
                         if (!url.contains("127.0.0.1:8080")) {
                             try {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
                                 context.startActivity(intent)
                                 return true
                             } catch (e: Exception) {
@@ -379,18 +402,13 @@ fun ReaderScreen(
                     view?.evaluateJavascript(initScript, null)
 
                     if (!targetHrefToJump.isNullOrEmpty()) {
-                        Log.d("DBOOK_DEBUG", "WebView Selesai Load -> Eksekusi Jump Href: $targetHrefToJump")
                         val escapedHref = targetHrefToJump.replace("'", "\\'")
-                        
                         Handler(Looper.getMainLooper()).postDelayed({
                             view?.evaluateJavascript("javascript:goToChapterHref('$escapedHref');") {
-                                Log.d("DBOOK_DEBUG", "Navigasi Href Selesai Dieksekusi ke JS")
                                 onHrefJumpHandled()
                             }
                         }, 500)
-                    } 
-
-                    else if (!initialCfiToJump.isNullOrEmpty()) {
+                    } else if (!initialCfiToJump.isNullOrEmpty()) {
                         val query = searchQueryToHighlight ?: ""
                         Handler(Looper.getMainLooper()).postDelayed({
                             view?.evaluateJavascript(
@@ -433,7 +451,6 @@ fun ReaderScreen(
             val encodedCfi = if (!targetCfi.isNullOrEmpty()) URLEncoder.encode(targetCfi, "UTF-8") else ""
             val bookIdParam = currentBook?.id ?: 0L
 
-            Log.d("DBOOK_DEBUG", "=== LOAD READER INITIAL ===")
             webView.loadUrl("http://127.0.0.1:8080/reader.html?cfi=$encodedCfi&bookId=$bookIdParam")
         }
     }
@@ -482,23 +499,6 @@ fun ReaderScreen(
     val animatedElevation by animateFloatAsState(targetValue = if (isOverviewMode) 12f else 0f, animationSpec = spec, label = "")
     val outerBackgroundColor = if (isOverviewMode) MaterialTheme.colorScheme.surfaceContainer else if (readerSettings.isDarkMode) Color(0xFF121212) else Color(0xFFFFFFFF)
 
-    val server = remember { LocalBookServer(context, 8080) }
-
-    LaunchedEffect(filePath) {
-        scope.launch(Dispatchers.IO) { currentBook = bookRepository.getBookByFilePath(filePath) }
-    }
-
-    LaunchedEffect(filePath) {
-        try {
-            server.serveBook(filePath)
-            if (!server.isAlive) server.start()
-            delay(100)
-            isServerReady = true
-        } catch (e: Exception) {
-            Log.e("ReaderScreen", "Failed starting LocalBookServer: ${e.message}")
-        }
-    }
-
     val window = (context as? Activity)?.window
     LaunchedEffect(isOverviewMode) {
         if (window != null) {
@@ -526,7 +526,6 @@ fun ReaderScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            Log.d("DBOOK_DEBUG", "=== EXIT READER ===")
             if (server.isAlive) server.stop()
 
             if (window != null) {

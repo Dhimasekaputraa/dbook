@@ -19,7 +19,7 @@ import com.dhimsea.dbook.data.local.entity.ShelfBookCrossRef
         ShelfEntity::class,
         ShelfBookCrossRef::class
     ],
-    version = 7,                   
+    version = 8,                   
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -115,6 +115,12 @@ abstract class AppDatabase : RoomDatabase() {
                     ON `shelf_book_cross_ref` (`bookId`)
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shelf_book_cross_ref ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
