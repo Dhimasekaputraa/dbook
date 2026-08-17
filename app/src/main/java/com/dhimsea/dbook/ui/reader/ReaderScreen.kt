@@ -93,7 +93,9 @@ data class ChapterMarker(
     val label: String,
     val percent: Float,
     val pageNum: Int = 1,
-    val href: String = ""
+    val href: String = "",
+    val subitems: List<ChapterMarker> = emptyList(),
+    val level: Int = 0
 ) : Parcelable
 
 data class PendingSelection(
@@ -145,18 +147,27 @@ class ReaderBridge(
         mainHandler.post {
             try {
                 val array = JSONArray(jsonString)
-                val list = mutableListOf<ChapterMarker>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    list.add(
-                        ChapterMarker(
-                            label = obj.getString("label"),
-                            percent = obj.optDouble("percent", 0.0).toFloat(),
-                            pageNum = obj.optInt("pageNum", 1),
-                            href = obj.optString("href", "")
+                
+                fun parseNode(jsonArray: JSONArray, currentLevel: Int): List<ChapterMarker> {
+                    val list = mutableListOf<ChapterMarker>()
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        val subJsonArray = obj.optJSONArray("subitems")
+                        list.add(
+                            ChapterMarker(
+                                label = obj.optString("label", ""),
+                                percent = obj.optDouble("percent", 0.0).toFloat(),
+                                pageNum = obj.optInt("pageNum", 1),
+                                href = obj.optString("href", ""),
+                                subitems = if (subJsonArray != null) parseNode(subJsonArray, currentLevel + 1) else emptyList(),
+                                level = currentLevel
+                            )
                         )
-                    )
+                    }
+                    return list
                 }
+                
+                val list = parseNode(array, 0)
                 onChaptersLoaded(list)
             } catch (e: Exception) {
                 e.printStackTrace()

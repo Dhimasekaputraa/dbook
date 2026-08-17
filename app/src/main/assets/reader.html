@@ -355,7 +355,7 @@
                         if (spineSection) {
                             if (elementId && spineSection.document) {
                                 var targetEl = spineSection.document.getElementById(elementId) || 
-                                               spineSection.document.querySelector('[name="' + elementId + '"]');
+                                            spineSection.document.querySelector('[name="' + elementId + '"]');
                                 if (targetEl && spineSection.cfiFromElement) {
                                     cfi = spineSection.cfiFromElement(targetEl);
                                 }
@@ -380,23 +380,24 @@
                             page = Math.max(1, Math.round(pct * totalLocs));
                         }
 
-                        var nodeResult = [];
-                        if (labelText.length > 0) {
-                            nodeResult.push({ 
-                                label: labelText, 
-                                parentLabel: parentLabel || null,
-                                percent: pct, 
-                                pageNum: page,
-                                href: hrefTarget 
-                            });
-                        }
+                        var nodeObj = { 
+                            label: labelText, 
+                            parentLabel: parentLabel || null,
+                            percent: pct, 
+                            pageNum: page,
+                            href: hrefTarget,
+                            subitems: [] 
+                        };
 
                         if (item.subitems && item.subitems.length > 0) {
                             return parseNavItems(item.subitems, labelText).then(function(subResults) {
-                                return nodeResult.concat(subResults);
+
+                                nodeObj.subitems = subResults; 
+                                return labelText.length > 0 ? [nodeObj] : subResults;
                             });
                         }
-                        return nodeResult;
+                        
+                        return labelText.length > 0 ? [nodeObj] : [];
                     }).catch(function(err) {
                         console.log("TOC item parsing error:", item.label, err);
                         return [];
@@ -434,51 +435,62 @@
 
         function sendProgress(location) {
             if (window.Android && location && location.start) {
-                var total = (book.locations && book.locations.total > 0) ? book.locations.total : 1;
-                var rawPage = (book.locations && book.locations.total > 0) ? book.locations.locationFromCfi(location.start.cfi) : 0;
                 
+                var total = book.locations.total || 1;
+                var rawPage = book.locations.locationFromCfi(location.start.cfi);
+                var currentPage = (rawPage && rawPage > 0) ? rawPage : 1;
+                var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
                 var currentCfi = location.start.cfi;
-                var spineIndex = location.start.index || 0;
-                var totalSpine = (book.spine && book.spine.length > 0) ? book.spine.length : 1;
 
-                if (total <= 1) {
-                    var estimatedTotalPages = totalSpine * 15;
-                    total = estimatedTotalPages;
-                    currentPage = Math.max(1, Math.round((spineIndex / totalSpine) * estimatedTotalPages));
-                } else {
-                    currentPage = (rawPage && rawPage > 0) ? rawPage : Math.max(1, Math.round((spineIndex / totalSpine) * total));
-                }
-
-                var percent = (book.locations && book.locations.total > 0) 
-                    ? (book.locations.percentageFromCfi(currentCfi) || (spineIndex / totalSpine))
-                    : (spineIndex / totalSpine);
-
-                var chapterName = "Chapter";
-                var activeIndex = -1;
                 var rawHref = location.start.href || "";
                 var cleanHref = rawHref.split('#')[0];
                 var currentAnchor = rawHref.indexOf('#') !== -1 ? rawHref.split('#')[1] : null;
 
-                if (typeof chapterList !== "undefined" && chapterList.length > 0) {
-                    
-                    if (currentAnchor) {
-                        activeIndex = chapterList.findIndex(function(item) {
-                            return item.href === rawHref || (item.href && item.href.endsWith('#' + currentAnchor));
+                var chapterName = "Chapter";
+
+                function flattenChapters(list, parentLabel) {
+                    var result = [];
+                    for (var i = 0; i < list.length; i++) {
+                        var item = list[i];
+                        result.push({
+                            label: item.label,
+                            parentLabel: parentLabel,
+                            href: item.href,
+                            pageNum: item.pageNum
                         });
+                        if (item.subitems && item.subitems.length > 0) {
+                            result = result.concat(flattenChapters(item.subitems, item.label));
+                        }
+                    }
+                    return result;
+                }
+
+                if (typeof chapterList !== "undefined" && chapterList.length > 0) {
+                    var flatList = flattenChapters(chapterList, null);
+                    var activeIndex = -1;
+
+                    if (currentAnchor) {
+                        for (var i = flatList.length - 1; i >= 0; i--) {
+                            var itemHref = flatList[i].href || "";
+                            if (itemHref === rawHref || itemHref.endsWith('#' + currentAnchor)) {
+                                activeIndex = i;
+                                break;
+                            }
+                        }
                     }
 
                     if (activeIndex === -1) {
                         var docIndices = [];
-                        for (var i = 0; i < chapterList.length; i++) {
-                            if (chapterList[i].href && chapterList[i].href.split('#')[0] === cleanHref) {
-                                docIndices.push(i);
+                        for (var j = 0; j < flatList.length; j++) {
+                            if (flatList[j].href && flatList[j].href.split('#')[0] === cleanHref) {
+                                docIndices.push(j);
                             }
                         }
 
                         if (docIndices.length > 0) {
-                            for (var j = docIndices.length - 1; j >= 0; j--) {
-                                var idx = docIndices[j];
-                                if (chapterList[idx].pageNum <= currentPage) {
+                            for (var k = docIndices.length - 1; k >= 0; k--) {
+                                var idx = docIndices[k];
+                                if (flatList[idx].pageNum <= currentPage) {
                                     activeIndex = idx;
                                     break;
                                 }
@@ -487,23 +499,8 @@
                         }
                     }
 
-                    if (activeIndex === -1) {
-                        for (var k = 0; k < chapterList.length; k++) {
-                            var item = chapterList[k];
-                            var nextItem = chapterList[k + 1];
-
-                            if (item.pageNum <= currentPage) {
-                                if (!nextItem || nextItem.pageNum > currentPage) {
-                                    activeIndex = k;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
                     if (activeIndex !== -1) {
-                        var activeItem = chapterList[activeIndex];
-                        
+                        var activeItem = flatList[activeIndex];
                         if (activeItem.parentLabel && activeItem.parentLabel.trim() !== activeItem.label.trim()) {
                             chapterName = activeItem.parentLabel.trim() + ": " + activeItem.label.trim();
                         } else {
@@ -518,8 +515,6 @@
                         chapterName = navItem.label.trim();
                     }
                 }
-
-                console.log("[DBOOK_PROGRESS_DEBUG] Page:", currentPage, "| Total:", total, "| RawHref:", rawHref, "| ActiveIdx:", activeIndex, "| Name:", chapterName);
 
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
