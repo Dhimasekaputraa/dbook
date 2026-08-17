@@ -220,10 +220,6 @@ class LibraryViewModel(
                 onResult(false, "Shelf name cannot be empty.")
                 return@launch
             }
-            if (selectedBookIds.isEmpty()) {
-                onResult(false, "Please select at least one book.")
-                return@launch
-            }
 
             val success = bookRepository.createShelfWithBooks(trimmedName, selectedBookIds)
             if (success) {
@@ -262,12 +258,6 @@ class LibraryViewModel(
             if (trimmedName.isEmpty()) {
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     onResult(false, "Shelf name cannot be empty.")
-                }
-                return@launch
-            }
-            if (orderedBookIds.isEmpty()) {
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                    onResult(false, "Shelf must contain at least one book.")
                 }
                 return@launch
             }

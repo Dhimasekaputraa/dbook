@@ -67,10 +67,6 @@ fun EditShelfScreen(
                                 errorMessage = "Shelf name cannot be empty."
                                 return@TextButton
                             }
-                            if (currentBooks.isEmpty()) {
-                                errorMessage = "Shelf must contain at least one book."
-                                return@TextButton
-                            }
 
                             onSaveShelf(
                                 shelfWithBooks.shelf.id,

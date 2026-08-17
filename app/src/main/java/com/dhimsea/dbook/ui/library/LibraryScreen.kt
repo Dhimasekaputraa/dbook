@@ -387,11 +387,7 @@ fun LibraryScreen(
                         },
                         onCreateShelf = {
                             isFabExpanded = false
-                            if (books.isEmpty()) {
-                                viewModel.showSnackbar("You need at least one book in library to create a shelf.")
-                            } else {
-                                showCreateShelfDialog = true
-                            }
+                            showCreateShelfDialog = true
                         }
                     )
                 }
@@ -468,7 +464,15 @@ fun LibraryScreen(
                                         onDeleteShelfClick = { shelfToDelete = shelfWithBooks }
                                     )
 
-                                    LazyRow(
+                                    if (shelfWithBooks.books.isEmpty()) {
+                                        Text(
+                                            text = "This shelf is empty. Tap the three dots to edit and add books.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                        )
+                                    } else {
+                                        LazyRow(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                                     ) {
@@ -486,6 +490,7 @@ fun LibraryScreen(
                                             )
                                         }
                                     }
+                                }
 
                                     Spacer(modifier = Modifier.height(16.dp))
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -835,10 +840,6 @@ fun CreateShelfDialog(
                 onClick = {
                     if (shelfName.trim().isEmpty()) {
                         errorMessage = "Shelf name cannot be empty."
-                        return@TextButton
-                    }
-                    if (selectedBookIds.isEmpty()) {
-                        errorMessage = "Select at least one book."
                         return@TextButton
                     }
                     onCreateShelf(shelfName, selectedBookIds.toList()) { success, errorMsg ->

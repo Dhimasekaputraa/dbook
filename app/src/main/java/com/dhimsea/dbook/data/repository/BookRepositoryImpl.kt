@@ -115,8 +115,6 @@ class BookRepositoryImpl(
         val existing = shelfDao.getShelfByName(trimmedName)
         if (existing != null) return false
 
-        if (selectedBookIds.isEmpty()) return false
-
         val newShelf = Shelf(name = trimmedName)
         val shelfId = shelfDao.insertShelf(newShelf.toEntity())
 
@@ -150,7 +148,6 @@ class BookRepositoryImpl(
         val existing = shelfDao.getShelfByName(trimmedName)
 
         if (existing != null && existing.id != shelfId) return false
-        if (orderedBookIds.isEmpty()) return false
 
         val currentShelf = shelfDao.getShelfByName(trimmedName) ?: ShelfEntity(id = shelfId, name = trimmedName)
         shelfDao.insertShelf(currentShelf.copy(name = trimmedName))
