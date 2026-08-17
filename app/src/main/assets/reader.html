@@ -204,7 +204,7 @@
 
                     try {
                         var generated = book.locations.save();
-                       // Menambahkan kolom position tanpa merusak data shelf yang sudah ada        localStorage.setItem(cacheKey, generated);
+                        localStorage.setItem(cacheKey, generated);
                     } catch (e) {
                         console.log("Failed to save locations to cache:", e);
                     }
@@ -331,7 +331,7 @@
 
             chapterList = [];
             
-            function parseNavItems(items) {
+            function parseNavItems(items, parentLabel) {
                 if (!items || items.length === 0) return Promise.resolve([]);
 
                 return Promise.all(items.map(function(item) {
@@ -375,7 +375,7 @@
                             if (rawPage && rawPage > 0) page = rawPage;
                         } else if (spineSection) {
                             var totalSpine = book.spine.length || 1;
-                            var totalLocs = book.locations.total || 100;
+                            var totalLocs = (book.locations && book.locations.total > 0) ? book.locations.total : 100;
                             pct = (spineSection.index / totalSpine);
                             page = Math.max(1, Math.round(pct * totalLocs));
                         }
@@ -384,6 +384,7 @@
                         if (labelText.length > 0) {
                             nodeResult.push({ 
                                 label: labelText, 
+                                parentLabel: parentLabel || null,
                                 percent: pct, 
                                 pageNum: page,
                                 href: hrefTarget 
@@ -391,7 +392,7 @@
                         }
 
                         if (item.subitems && item.subitems.length > 0) {
-                            return parseNavItems(item.subitems).then(function(subResults) {
+                            return parseNavItems(item.subitems, labelText).then(function(subResults) {
                                 return nodeResult.concat(subResults);
                             });
                         }
@@ -406,7 +407,7 @@
             }
 
             var parsePromise = (book.navigation && book.navigation.toc) 
-                ? parseNavItems(book.navigation.toc) 
+                ? parseNavItems(book.navigation.toc, null) 
                 : Promise.resolve([]);
 
             return parsePromise.then(function(finalChapters) {
@@ -433,11 +434,24 @@
 
         function sendProgress(location) {
             if (window.Android && location && location.start) {
-                var total = book.locations.total || 1;
-                var rawPage = book.locations.locationFromCfi(location.start.cfi);
-                var currentPage = (rawPage && rawPage > 0) ? rawPage : 1;
-                var percent = book.locations.percentageFromCfi(location.start.cfi) || 0;
+                var total = (book.locations && book.locations.total > 0) ? book.locations.total : 1;
+                var rawPage = (book.locations && book.locations.total > 0) ? book.locations.locationFromCfi(location.start.cfi) : 0;
+                
                 var currentCfi = location.start.cfi;
+                var spineIndex = location.start.index || 0;
+                var totalSpine = (book.spine && book.spine.length > 0) ? book.spine.length : 1;
+
+                if (total <= 1) {
+                    var estimatedTotalPages = totalSpine * 15;
+                    total = estimatedTotalPages;
+                    currentPage = Math.max(1, Math.round((spineIndex / totalSpine) * estimatedTotalPages));
+                } else {
+                    currentPage = (rawPage && rawPage > 0) ? rawPage : Math.max(1, Math.round((spineIndex / totalSpine) * total));
+                }
+
+                var percent = (book.locations && book.locations.total > 0) 
+                    ? (book.locations.percentageFromCfi(currentCfi) || (spineIndex / totalSpine))
+                    : (spineIndex / totalSpine);
 
                 var chapterName = "Chapter";
                 var activeIndex = -1;
@@ -453,7 +467,6 @@
                         });
                     }
 
-                
                     if (activeIndex === -1) {
                         var docIndices = [];
                         for (var i = 0; i < chapterList.length; i++) {
@@ -474,7 +487,6 @@
                         }
                     }
 
-                
                     if (activeIndex === -1) {
                         for (var k = 0; k < chapterList.length; k++) {
                             var item = chapterList[k];
@@ -489,23 +501,11 @@
                         }
                     }
 
-                
                     if (activeIndex !== -1) {
                         var activeItem = chapterList[activeIndex];
-                        var itemCleanHref = activeItem.href ? activeItem.href.split('#')[0] : "";
-                        var isSubChapter = activeItem.href && activeItem.href.indexOf('#') !== -1;
-
-                        if (isSubChapter) {
-                            var parentItem = chapterList.find(function(item) {
-                                var pClean = item.href ? item.href.split('#')[0] : "";
-                                return pClean === itemCleanHref && (!item.href || item.href.indexOf('#') === -1);
-                            });
-
-                            if (parentItem && parentItem.label && parentItem.label.trim() !== activeItem.label.trim()) {
-                                chapterName = parentItem.label.trim() + ": " + activeItem.label.trim();
-                            } else {
-                                chapterName = activeItem.label.trim();
-                            }
+                        
+                        if (activeItem.parentLabel && activeItem.parentLabel.trim() !== activeItem.label.trim()) {
+                            chapterName = activeItem.parentLabel.trim() + ": " + activeItem.label.trim();
                         } else {
                             chapterName = activeItem.label.trim();
                         }
@@ -519,7 +519,7 @@
                     }
                 }
 
-                console.log("[DBOOK_PROGRESS_DEBUG] Page:", currentPage, "| RawHref:", rawHref, "| ActiveIdx:", activeIndex, "| Name:", chapterName);
+                console.log("[DBOOK_PROGRESS_DEBUG] Page:", currentPage, "| Total:", total, "| RawHref:", rawHref, "| ActiveIdx:", activeIndex, "| Name:", chapterName);
 
                 try { window.Android.updateProgress(currentPage, total, percent, chapterName, currentCfi); } catch(e) {}
             }
