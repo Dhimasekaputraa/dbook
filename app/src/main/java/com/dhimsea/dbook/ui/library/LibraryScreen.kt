@@ -554,9 +554,17 @@ fun LibraryScreen(
         CreateShelfDialog(
             books = books,
             existingShelves = shelvesWithBooks,
-            onDismiss = { showCreateShelfDialog = false },
+            initialSelectedBookIds = bookToAddToShelf?.let { listOf(it.id) } ?: emptyList(),
+            onDismiss = { 
+                showCreateShelfDialog = false
+                bookToAddToShelf = null
+            },
             onCreateShelf = { name, bookIds, onResult ->
                 viewModel.createShelf(name, bookIds) { success, errorMsg ->
+                    if (success) {
+                        showCreateShelfDialog = false
+                        bookToAddToShelf = null
+                    }
                     onResult(success, errorMsg)
                 }
             }
@@ -692,13 +700,16 @@ fun LibraryScreen(
 private fun CreateShelfDialog(
     books: List<Book>,
     existingShelves: List<ShelfWithBooks>,
+    initialSelectedBookIds: List<Long> = emptyList(),
     onDismiss: () -> Unit,
     onCreateShelf: (String, List<Long>, (Boolean, String?) -> Unit) -> Unit
 ) {
     var step by remember { mutableIntStateOf(1) }
     var shelfName by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var selectedBookIds by remember { mutableStateOf(setOf<Long>()) }
+    var selectedBookIds by remember(initialSelectedBookIds) { 
+        mutableStateOf(initialSelectedBookIds.toSet()) 
+    }
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredBooks = remember(books, searchQuery) {
@@ -971,7 +982,6 @@ private fun AddToShelfDialog(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    onDismiss()
                                     onCreateShelfClick()
                                 }
                                 .padding(horizontal = 8.dp, vertical = 10.dp),
