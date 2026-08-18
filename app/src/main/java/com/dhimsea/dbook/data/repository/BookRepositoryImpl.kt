@@ -137,10 +137,6 @@ class BookRepositoryImpl(
 
     override suspend fun removeBookFromShelf(shelfId: Long, bookId: Long) {
         shelfDao.removeBookFromShelf(ShelfBookCrossRef(shelfId, bookId))
-        val remainingCount = shelfDao.getBookCountInShelf(shelfId)
-        if (remainingCount == 0) {
-            shelfDao.deleteShelf(shelfId)
-        }
     }
 
     override suspend fun updateShelfWithBooks(shelfId: Long, newName: String, orderedBookIds: List<Long>): Boolean {
