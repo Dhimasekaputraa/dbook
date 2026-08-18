@@ -10,11 +10,14 @@
 
 ## Features
 
+* **Auto Sync Reading Progress**: Automatically saves and restores your last read location and percentage.
+* **Book Shelves & Organization**: Create your shelves, manage collections, and easily categorize your books.
+* **Table of Contents**: View the book's chapter hierarchy and navigate directly to any section.
+* **In-App Dictionary**: Look up word definitions directly from the text selection floating menu.
+* **Customized Reader Appearance**: Customize font type, size, line spacing, light/dark mode, Keep Screen On, and apply an adjustable Night Light filter.
 * **Highlights & Annotations**: Select text, save highlights with custom colors, and manage your annotations.
 * **In-Book Search**: Easily search for words or phrases within the book with dynamic text highlighting.
-* **Customizable Reader:** Change your font type, text sizes, line spacing, and dark mode for reader screen.
 * **Share Text as Image**: Highlight your favorite quotes and share them directly as images.
-* **Auto Sync Reading Progress**: Automatically saves and restores your last read location and percentage.
   
 ---
 
@@ -25,6 +28,13 @@
 | <img src="app/src/main/assets/screenshots/Screenshot_20260805-013553_DBook.png" width="250"/> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-012940_DBook.png" width="250" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-021748_DBook.png" width="250" /> | <img src="app/src/main/assets/screenshots/Screenshot_20260805-013246_DBook.png" width="250" />
 
 ---
+
+## App Permissions
+
+* **Internet & Network Access** (`INTERNET`, `ACCESS_NETWORK_STATE`): Used strictly for looking up word definitions via the In-App Dictionary API.
+* **Storage Access Framework (SAF)** (`OPEN_DOCUMENT`, `OPEN_DOCUMENT_TREE`): Used to import EPUB files securely from your device storage without requiring full file system access.
+* **Notifications** (`POST_NOTIFICATIONS`): Used for book import progress notifications.
+* **Share Intent** (`SEND`): Used to share text quotes as images to external apps.
 
 ## Building from Source
 
@@ -108,13 +118,14 @@ gradlew.bat assembleRelease
 
 ---
 
-## License
-This program is free software: you can redistribute it and/or modify it under the terms of the [MIT License](LICENSE).
+## License & Credits
 
-The following JavaScript and open-source libraries are bundled in this software:
+This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
 
-* [ePub.js](https://github.com/futurepress/epubjs-reader/), which is licensed under the BSD-2-Clause License.
-* [JSZip](https://github.com/johanpoirier/zip.js), which is licensed under the BSD-3-Clause License.
+### Third-Party Libraries & APIs
 
+* [ePub.js](https://github.com/futurepress/epubjs-reader/) ([BSD-2-Clause License](https://github.com/futurepress/epubjs-reader/blob/master/LICENSE)) — Used for EPUB rendering.
+* [JSZip](https://github.com/johanpoirier/zip.js) ([BSD-3-Clause License](https://github.com/johanpoirier/zip.js/blob/master/LICENSE)) — Used for unzipping EPUB files.
+* [Free Dictionary API](https://github.com/meetDeveloper/freeDictionaryAPI) ([GPL-3.0 License](https://github.com/meetDeveloper/freeDictionaryAPI/blob/master/LICENSE)) — Used for word definition lookups.
 
 
