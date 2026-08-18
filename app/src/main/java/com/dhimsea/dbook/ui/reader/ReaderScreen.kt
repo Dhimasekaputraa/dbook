@@ -44,8 +44,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -882,7 +882,7 @@ fun ReaderScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.MenuBook,
+                                imageVector = Icons.Outlined.Info,
                                 contentDescription = "Define",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
@@ -907,7 +907,7 @@ fun ReaderScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Share,
+                                imageVector = Icons.Outlined.Image,
                                 contentDescription = "Share as Image",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
